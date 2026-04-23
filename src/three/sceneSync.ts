@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { useStore, type Cutout, type CutoutImage, type Material, type Primitive } from '../state/store';
 import { getScene } from './sceneSetup';
-import { applyTransform, createMeshForPrimitive, createThreeMaterial } from './primitives';
+import { applyTransform, buildGeometry, createMeshForPrimitive, createThreeMaterial } from './primitives';
 import { applyCutoutTransform, createCutoutMesh } from './billboards';
 
 const PRIMITIVES_GROUP = 'primitivesGroup';
@@ -112,7 +112,7 @@ function reconcilePrimitives(
     seen.add(p.id);
     const existing = meshById.get(p.id);
     if (!existing) {
-      const mesh = createMeshForPrimitive(p, resolveMaterial(p.materialId));
+      const mesh = createMeshForPrimitive(p, resolveMaterial(p.materialId), primitives);
       meshById.set(p.id, mesh);
       group.add(mesh);
     } else {
@@ -120,6 +120,17 @@ function reconcilePrimitives(
       if (existing.userData.materialId !== p.materialId) {
         swapMaterial(existing, resolveMaterial(p.materialId));
         existing.userData.materialId = p.materialId;
+      }
+      // Rebuild geometry if adaptive flags changed (or if this is adaptive-capable
+      // and we haven't yet). This is a diff on the precomputed key string.
+      const { geometry, adaptiveKey } = buildGeometry(p, primitives);
+      const prevKey = existing.userData.adaptiveKey ?? null;
+      if (prevKey !== adaptiveKey) {
+        existing.geometry?.dispose();
+        existing.geometry = geometry;
+        existing.userData.adaptiveKey = adaptiveKey;
+      } else {
+        geometry.dispose();
       }
     }
   }

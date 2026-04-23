@@ -1,12 +1,25 @@
 import * as THREE from 'three';
 import type { Material, Primitive, PrimitiveType } from '../state/store';
 import { getTexture } from './textures';
+import {
+  BEVEL_SIZE,
+  adaptiveKey,
+  computeCoveredFaces,
+  createAdaptiveBoxGeometry,
+  edgeBevelMask,
+} from './adaptiveGeometry';
+
+export type GeometryResult = {
+  geometry: THREE.BufferGeometry;
+  adaptiveKey: string | null;
+};
 
 export function createMeshForPrimitive(
   p: Primitive,
   material: Material | null,
+  allPrimitives: Primitive[],
 ): THREE.Mesh {
-  const geometry = createGeometry(p.type);
+  const { geometry, adaptiveKey: key } = buildGeometry(p, allPrimitives);
   const threeMaterial = createThreeMaterial(material);
   const mesh = new THREE.Mesh(geometry, threeMaterial);
   mesh.castShadow = true;
@@ -14,7 +27,34 @@ export function createMeshForPrimitive(
   applyTransform(mesh, p);
   mesh.userData.primitiveId = p.id;
   mesh.userData.materialId = p.materialId;
+  mesh.userData.adaptiveKey = key;
   return mesh;
+}
+
+export function buildGeometry(
+  p: Primitive,
+  allPrimitives: Primitive[],
+): GeometryResult {
+  if (p.type === 'cube' || p.type === 'tile') {
+    const covered = computeCoveredFaces(allPrimitives).get(p.id) ?? new Set();
+    const bevelMask = edgeBevelMask(covered);
+    const half = p.type === 'cube'
+      ? { x: 0.5, y: 0.5, z: 0.5 }
+      : { x: 0.5, y: 0.125, z: 0.5 };
+    const geometry = createAdaptiveBoxGeometry(
+      half.x * p.scale.x,
+      half.y * p.scale.y,
+      half.z * p.scale.z,
+      covered,
+      bevelMask,
+      BEVEL_SIZE,
+    );
+    return { geometry, adaptiveKey: adaptiveKey(covered, bevelMask) };
+  }
+  return {
+    geometry: createSimpleGeometry(p.type),
+    adaptiveKey: null,
+  };
 }
 
 export function createThreeMaterial(material: Material | null): THREE.MeshStandardMaterial {
@@ -38,7 +78,7 @@ export function createThreeMaterial(material: Material | null): THREE.MeshStanda
   });
 }
 
-export function createGeometry(type: PrimitiveType): THREE.BufferGeometry {
+function createSimpleGeometry(type: PrimitiveType): THREE.BufferGeometry {
   switch (type) {
     case 'cube':
       return new THREE.BoxGeometry(1, 1, 1);
@@ -49,6 +89,11 @@ export function createGeometry(type: PrimitiveType): THREE.BufferGeometry {
     case 'slope':
       return createSlopeGeometry();
   }
+}
+
+/** Public helper for ghost mesh generation (doesn't need adaptive). */
+export function createGeometry(type: PrimitiveType): THREE.BufferGeometry {
+  return createSimpleGeometry(type);
 }
 
 export function applyTransform(mesh: THREE.Object3D, p: Primitive) {
