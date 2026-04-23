@@ -179,7 +179,7 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
         if (sampleAlphaAt(pos) >= 0.5) discard;
 
         // TODO(user): write the dilation sample loop.
-        // Decide if any opaque pixel lies within `thickness` world units of `pos`.
+        // Decide if any opaque pixel lies within 'thickness' world units of 'pos'.
         // If so, set hit = true and this fragment is part of the outline ring.
         // Offsets MUST be in world units (not UV); use sampleAlphaAt(pos + offset).
         bool hit = false;
