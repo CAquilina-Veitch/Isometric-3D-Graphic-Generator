@@ -1,17 +1,26 @@
 import { useEffect, useState } from 'react';
-import { useStore, type Primitive } from '../state/store';
+import { useStore, type Cutout, type Primitive } from '../state/store';
 import { record } from '../hooks/useHistory';
 import styles from './RightPanel.module.css';
 
+type Selection =
+  | { kind: 'primitive'; value: Primitive }
+  | { kind: 'cutout'; value: Cutout }
+  | null;
+
 export default function PropertiesTab() {
   const selectedIds = useStore((s) => s.selectedIds);
-  const primitive = useStore((s) =>
-    selectedIds.length === 1
-      ? s.primitives.find((p) => p.id === selectedIds[0]) ?? null
-      : null,
-  );
+  const selection = useStore<Selection>((s) => {
+    if (selectedIds.length !== 1) return null;
+    const id = selectedIds[0];
+    const primitive = s.primitives.find((p) => p.id === id);
+    if (primitive) return { kind: 'primitive', value: primitive };
+    const cutout = s.cutouts.find((c) => c.id === id);
+    if (cutout) return { kind: 'cutout', value: cutout };
+    return null;
+  });
 
-  if (!primitive) {
+  if (!selection) {
     return (
       <div className={styles.section}>
         <p className={styles.muted}>
@@ -23,10 +32,14 @@ export default function PropertiesTab() {
     );
   }
 
-  return <BoundProperties key={primitive.id} primitive={primitive} />;
+  return selection.kind === 'primitive' ? (
+    <BoundPrimitive key={selection.value.id} primitive={selection.value} />
+  ) : (
+    <BoundCutout key={selection.value.id} cutout={selection.value} />
+  );
 }
 
-function BoundProperties({ primitive }: { primitive: Primitive }) {
+function BoundPrimitive({ primitive }: { primitive: Primitive }) {
   const updatePrimitive = useStore((s) => s.updatePrimitive);
 
   const commitAxis = (
@@ -76,11 +89,74 @@ function BoundProperties({ primitive }: { primitive: Primitive }) {
         Material
       </div>
       <div className={styles.materialRow}>
-        <div
-          className={styles.swatch}
-          style={{ background: 'hsl(210 40% 55%)' }}
-        />
+        <div className={styles.swatch} style={{ background: 'hsl(210 40% 55%)' }} />
         <span className={styles.materialLabel}>(default)</span>
+      </div>
+    </div>
+  );
+}
+
+function BoundCutout({ cutout }: { cutout: Cutout }) {
+  const updateCutout = useStore((s) => s.updateCutout);
+  const image = useStore((s) => s.cutoutImages[cutout.imageId]);
+
+  const commitAxis = (
+    field: 'position' | 'rotation' | 'scale',
+    axis: 'x' | 'y' | 'z',
+    value: number,
+  ) => {
+    record(() => {
+      updateCutout(cutout.id, {
+        [field]: { ...cutout[field], [axis]: value },
+      });
+    });
+  };
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionTitle}>Cutout</div>
+      <div className={styles.muted} style={{ fontSize: 10, fontFamily: 'monospace' }}>
+        {image?.name ?? '(missing image)'}
+      </div>
+
+      <div className={styles.sectionTitle} style={{ marginTop: 10 }}>
+        Transform
+      </div>
+      <Vec3Field
+        label="Position"
+        value={cutout.position}
+        onCommit={(axis, v) => commitAxis('position', axis, v)}
+        step={0.25}
+      />
+      <Vec3Field
+        label="Rotation"
+        value={cutout.rotation}
+        onCommit={(axis, v) => commitAxis('rotation', axis, v)}
+        step={15}
+      />
+      <Vec3Field
+        label="Scale"
+        value={cutout.scale}
+        onCommit={(axis, v) => commitAxis('scale', axis, v)}
+        step={0.1}
+      />
+
+      <div className={styles.sectionTitle} style={{ marginTop: 14 }}>
+        Facing
+      </div>
+      <div className={styles.row}>
+        <button
+          data-active={cutout.facing === 'fixed'}
+          onClick={() => record(() => updateCutout(cutout.id, { facing: 'fixed' }))}
+        >
+          Fixed
+        </button>
+        <button
+          data-active={cutout.facing === 'billboard'}
+          onClick={() => record(() => updateCutout(cutout.id, { facing: 'billboard' }))}
+        >
+          Billboard
+        </button>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ const TOOLS: ToolDef[] = [
   { id: 'tile', icon: '▱', label: 'Tile', shortcut: '2' },
   { id: 'stairs', icon: '▲', label: 'Stairs', shortcut: '3' },
   { id: 'slope', icon: '◢', label: 'Slope', shortcut: '4' },
+  { id: 'cutout', icon: '✂', label: 'Cutout', shortcut: 'C' },
   { id: 'brush', icon: 'B', label: 'Brush', shortcut: 'B' },
   { id: 'gizmo', icon: '✥', label: 'Move', shortcut: 'G' },
   { id: 'orbit', icon: '✇', label: 'Orbit', shortcut: 'O' },

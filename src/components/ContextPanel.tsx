@@ -1,5 +1,6 @@
 import { useStore, type Tool } from '../state/store';
 import PaletteList from './PaletteList';
+import CutoutLibrary from './CutoutLibrary';
 import styles from './ContextPanel.module.css';
 
 const LABELS: Record<Tool, string> = {
@@ -8,6 +9,7 @@ const LABELS: Record<Tool, string> = {
   tile: 'Tile',
   stairs: 'Stairs',
   slope: 'Slope',
+  cutout: 'Cutout',
   brush: 'Brush',
   gizmo: 'Move',
   orbit: 'Orbit',
@@ -19,6 +21,7 @@ const HINTS: Record<Tool, string> = {
   tile: 'Click to place. Stacks on sub-grid Y (0.25).',
   stairs: 'Click to place. Press R to rotate.',
   slope: 'Click to place. Press R to rotate.',
+  cutout: 'Pick an image, then click to place.',
   brush: 'Click to paint. Drag to paint many.',
   gizmo: 'Drag arrows to move selection.',
   orbit: 'Drag to orbit the editor camera.',
@@ -56,6 +59,8 @@ function Placeholder({ tool }: { tool: Tool }) {
       );
     case 'brush':
       return <PaletteList />;
+    case 'cutout':
+      return <CutoutLibrary />;
     default:
       return <div className={styles.empty}>No options for this tool.</div>;
   }

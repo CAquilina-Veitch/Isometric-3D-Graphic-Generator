@@ -51,6 +51,9 @@ export function useKeyboard() {
         case 'b':
           s.setActiveTool('brush');
           return;
+        case 'c':
+          s.setActiveTool('cutout');
+          return;
         case 'g':
           s.setActiveTool('gizmo');
           return;
@@ -82,6 +85,7 @@ export function useKeyboard() {
               const current = useStore.getState();
               for (const id of [...current.selectedIds]) {
                 current.removePrimitive(id);
+                current.removeCutout(id);
               }
             });
           }

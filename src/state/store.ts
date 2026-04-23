@@ -9,7 +9,8 @@ export type Tool =
   | 'slope'
   | 'brush'
   | 'gizmo'
-  | 'orbit';
+  | 'orbit'
+  | 'cutout';
 
 export type RightTab = 'properties' | 'camera' | 'light' | 'render';
 
@@ -36,6 +37,23 @@ export type Material = {
   metalness: number;
 };
 
+export type CutoutImage = {
+  id: string;
+  name: string;
+  textureDataUrl: string;
+  width: number;
+  height: number;
+};
+
+export type Cutout = {
+  id: string;
+  imageId: string;
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
+  facing: 'fixed' | 'billboard';
+};
+
 const DEFAULT_MATERIALS: Material[] = [
   { id: 'def-sky',   name: 'Sky',     textureKind: 'plain',   color: '#8aa2d4', roughness: 0.55, metalness: 0.05 },
   { id: 'def-sand',  name: 'Sand',    textureKind: 'checker', color: '#c4a47a', secondaryColor: '#8a7454', roughness: 0.7, metalness: 0.0 },
@@ -49,6 +67,9 @@ const DEFAULT_MATERIALS: Material[] = [
 
 type SceneSlice = {
   primitives: Primitive[];
+  cutouts: Cutout[];
+  cutoutImages: Record<string, CutoutImage>;
+  activeCutoutImageId: string | null;
   selectedIds: string[];
   materials: Record<string, Material>;
   paletteOrder: string[];
@@ -60,6 +81,12 @@ type SceneActions = {
   addPrimitive: (p: Omit<Primitive, 'materialId'> & { materialId?: string | null }) => void;
   updatePrimitive: (id: string, patch: Partial<Primitive>) => void;
   removePrimitive: (id: string) => void;
+  addCutout: (c: Cutout) => void;
+  updateCutout: (id: string, patch: Partial<Cutout>) => void;
+  removeCutout: (id: string) => void;
+  addCutoutImage: (img: CutoutImage) => void;
+  removeCutoutImage: (id: string) => void;
+  setActiveCutoutImage: (id: string | null) => void;
   setSelection: (ids: string[]) => void;
   addMaterial: (m: Material) => void;
   updateMaterial: (id: string, patch: Partial<Material>) => void;
@@ -97,6 +124,9 @@ const defaultRotationIds = DEFAULT_MATERIALS.map((m) => m.id);
 
 export const useStore = create<Store>((set, get) => ({
   primitives: [],
+  cutouts: [],
+  cutoutImages: {},
+  activeCutoutImageId: null,
   selectedIds: [],
   materials: seededMaterials,
   paletteOrder: defaultRotationIds.slice(),
@@ -138,6 +168,38 @@ export const useStore = create<Store>((set, get) => ({
       selectedIds: s.selectedIds.filter((sid) => sid !== id),
       sceneDirty: s.sceneDirty + 1,
     })),
+
+  addCutout: (c) =>
+    set((s) => ({ cutouts: [...s.cutouts, c], sceneDirty: s.sceneDirty + 1 })),
+  updateCutout: (id, patch) =>
+    set((s) => ({
+      cutouts: s.cutouts.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      sceneDirty: s.sceneDirty + 1,
+    })),
+  removeCutout: (id) =>
+    set((s) => ({
+      cutouts: s.cutouts.filter((c) => c.id !== id),
+      selectedIds: s.selectedIds.filter((sid) => sid !== id),
+      sceneDirty: s.sceneDirty + 1,
+    })),
+
+  addCutoutImage: (img) =>
+    set((s) => ({
+      cutoutImages: { ...s.cutoutImages, [img.id]: img },
+      activeCutoutImageId: s.activeCutoutImageId ?? img.id,
+    })),
+  removeCutoutImage: (id) =>
+    set((s) => {
+      const next = { ...s.cutoutImages };
+      delete next[id];
+      return {
+        cutoutImages: next,
+        activeCutoutImageId:
+          s.activeCutoutImageId === id ? null : s.activeCutoutImageId,
+      };
+    }),
+  setActiveCutoutImage: (id) => set({ activeCutoutImageId: id }),
+
   setSelection: (ids) => set({ selectedIds: ids }),
 
   addMaterial: (m) =>

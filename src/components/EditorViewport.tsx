@@ -8,11 +8,15 @@ import {
   resizeOrthoCamera,
 } from '../three/sceneSetup';
 import { getOrCreateGhost, removeGhost } from '../three/ghost';
-import { getPrimitivesGroupObject, primitiveIdFor } from '../three/sceneSync';
+import {
+  getPrimitivesGroupObject,
+  getSelectableMeshes,
+  resolveHit,
+} from '../three/sceneSync';
 import { createGizmo } from '../three/gizmo';
 import { useStore, nextPrimitiveId, type Primitive, type PrimitiveType } from '../state/store';
 import { groundPlacement, gridCellKey } from '../utils/snap';
-import { beginTx, commitTx } from '../hooks/useHistory';
+import { beginTx, commitTx, record } from '../hooks/useHistory';
 import styles from './Viewport.module.css';
 
 const ZOOM_SCALE = 10;
@@ -103,7 +107,8 @@ export default function EditorViewport() {
       const group = getPrimitivesGroupObject();
       const hits = raycaster.intersectObjects(group.children, false);
       if (hits.length === 0) return null;
-      return primitiveIdFor(hits[0].object);
+      const resolved = resolveHit(hits[0].object);
+      return resolved?.kind === 'primitive' ? resolved.id : null;
     };
 
     const paintAtPointer = (ev: PointerEvent) => {
@@ -133,15 +138,29 @@ export default function EditorViewport() {
       pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
       pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointerNDC, camera);
-      const group = getPrimitivesGroupObject();
-      const hits = raycaster.intersectObjects(group.children, false);
+      const hits = raycaster.intersectObjects(getSelectableMeshes(), false);
       if (hits.length === 0) {
         useStore.getState().setSelection([]);
         return false;
       }
-      const id = primitiveIdFor(hits[0].object);
-      useStore.getState().setSelection(id ? [id] : []);
+      const resolved = resolveHit(hits[0].object);
+      useStore.getState().setSelection(resolved ? [resolved.id] : []);
       return true;
+    };
+
+    const placeCutoutAt = (x: number, z: number) => {
+      const s = useStore.getState();
+      if (!s.activeCutoutImageId) return;
+      record(() => {
+        useStore.getState().addCutout({
+          id: `co-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+          imageId: s.activeCutoutImageId!,
+          position: { x: Math.round(x * 2) / 2, y: 1, z: Math.round(z * 2) / 2 },
+          rotation: { x: 0, y: 0, z: 0 },
+          scale: { x: 1, y: 1, z: 1 },
+          facing: 'fixed',
+        });
+      });
     };
 
     const onPointerDown = (ev: PointerEvent) => {
@@ -162,6 +181,11 @@ export default function EditorViewport() {
       }
       const h = getHit(ev);
       if (!h) return;
+      if (activeTool === 'cutout') {
+        ev.stopPropagation();
+        placeCutoutAt(h.x, h.z);
+        return;
+      }
       if (isPlacementTool(activeTool)) {
         ev.stopPropagation();
         recentCells.clear();
@@ -229,7 +253,12 @@ export default function EditorViewport() {
 
     const applyToolState = (tool: typeof activeTool) => {
       activeTool = tool;
-      if (isPlacementTool(tool) || tool === 'select' || tool === 'brush') {
+      if (
+        isPlacementTool(tool) ||
+        tool === 'select' ||
+        tool === 'brush' ||
+        tool === 'cutout'
+      ) {
         controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
       } else {
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
