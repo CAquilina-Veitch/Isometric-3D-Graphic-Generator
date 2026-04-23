@@ -51,6 +51,8 @@ type SceneSlice = {
   primitives: Primitive[];
   selectedIds: string[];
   materials: Record<string, Material>;
+  paletteOrder: string[];
+  activeBrushMaterialId: string | null;
   defaultRotationIndex: number;
 };
 
@@ -62,6 +64,8 @@ type SceneActions = {
   addMaterial: (m: Material) => void;
   updateMaterial: (id: string, patch: Partial<Material>) => void;
   removeMaterial: (id: string) => void;
+  setActiveBrushMaterial: (id: string | null) => void;
+  replacePalette: (materials: Material[]) => void;
 };
 
 type UiSlice = {
@@ -93,13 +97,18 @@ export const useStore = create<Store>((set, get) => ({
   primitives: [],
   selectedIds: [],
   materials: seededMaterials,
+  paletteOrder: defaultRotationIds.slice(),
+  activeBrushMaterialId: defaultRotationIds[0] ?? null,
   defaultRotationIndex: 0,
 
   addPrimitive: (input) => {
+    const order = get().paletteOrder;
     const materialId =
       input.materialId !== undefined
         ? input.materialId
-        : defaultRotationIds[get().defaultRotationIndex % defaultRotationIds.length];
+        : order.length > 0
+        ? order[get().defaultRotationIndex % order.length]
+        : null;
     set((s) => ({
       primitives: [
         ...s.primitives,
@@ -130,7 +139,12 @@ export const useStore = create<Store>((set, get) => ({
   setSelection: (ids) => set({ selectedIds: ids }),
 
   addMaterial: (m) =>
-    set((s) => ({ materials: { ...s.materials, [m.id]: m } })),
+    set((s) => ({
+      materials: { ...s.materials, [m.id]: m },
+      paletteOrder: s.paletteOrder.includes(m.id)
+        ? s.paletteOrder
+        : [...s.paletteOrder, m.id],
+    })),
   updateMaterial: (id, patch) =>
     set((s) => {
       const existing = s.materials[id];
@@ -144,8 +158,20 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => {
       const next = { ...s.materials };
       delete next[id];
-      return { materials: next };
+      return {
+        materials: next,
+        paletteOrder: s.paletteOrder.filter((pid) => pid !== id),
+        activeBrushMaterialId:
+          s.activeBrushMaterialId === id ? null : s.activeBrushMaterialId,
+      };
     }),
+  setActiveBrushMaterial: (id) => set({ activeBrushMaterialId: id }),
+  replacePalette: (materials) =>
+    set(() => ({
+      materials: Object.fromEntries(materials.map((m) => [m.id, m])),
+      paletteOrder: materials.map((m) => m.id),
+      activeBrushMaterialId: materials[0]?.id ?? null,
+    })),
 
   activeTool: 'select',
   activeRightTab: 'properties',

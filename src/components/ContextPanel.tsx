@@ -1,4 +1,5 @@
 import { useStore, type Tool } from '../state/store';
+import PaletteList from './PaletteList';
 import styles from './ContextPanel.module.css';
 
 const LABELS: Record<Tool, string> = {
@@ -54,26 +55,7 @@ function Placeholder({ tool }: { tool: Tool }) {
         </section>
       );
     case 'brush':
-      return (
-        <section className={styles.section}>
-          <div className={styles.sectionTitle}>Palette</div>
-          <div className={styles.grid}>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className={styles.swatch}
-                style={{
-                  background: `hsl(${(i * 360) / 8} 55% 55%)`,
-                }}
-              />
-            ))}
-          </div>
-          <div className={styles.row}>
-            <button>Import</button>
-            <button>Export</button>
-          </div>
-        </section>
-      );
+      return <PaletteList />;
     default:
       return <div className={styles.empty}>No options for this tool.</div>;
   }
