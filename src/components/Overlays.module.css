@@ -14,11 +14,11 @@
   bottom: 18px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(15, 17, 21, 0.85);
-  border: 1px solid var(--border);
+  background: rgba(61, 52, 40, 0.92);
+  border: 1px solid var(--border-strong);
   border-radius: 6px;
   padding: 8px 14px;
-  color: var(--fg-1);
+  color: var(--rail-fg);
   font-size: 12px;
   backdrop-filter: blur(6px);
   pointer-events: none;
@@ -27,7 +27,7 @@
 .modalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(42, 36, 32, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;

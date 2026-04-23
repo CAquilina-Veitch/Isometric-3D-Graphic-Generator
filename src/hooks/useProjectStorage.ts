@@ -31,8 +31,8 @@ function hydratePalette() {
     useStore.setState({
       materials: Object.fromEntries(materials.map((m) => [m.id, m])),
       paletteOrder: order.length ? order : materials.map((m) => m.id),
-      activeBrushMaterialId:
-        useStore.getState().activeBrushMaterialId ?? materials[0]?.id ?? null,
+      activeMaterialId:
+        useStore.getState().activeMaterialId ?? materials[0]?.id ?? null,
     });
   } catch (err) {
     console.warn('Failed to hydrate palette from localStorage:', err);

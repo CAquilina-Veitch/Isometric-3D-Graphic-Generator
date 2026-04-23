@@ -39,7 +39,7 @@ export function getScene(): THREE.Scene {
   floorMesh.name = 'floor';
   scene.add(floorMesh);
 
-  gridHelper = new THREE.GridHelper(FLOOR_SIZE, GRID_DIVISIONS, 0x2a3144, 0x20252f);
+  gridHelper = new THREE.GridHelper(FLOOR_SIZE, GRID_DIVISIONS, 0x8a7d68, 0xb7a98d);
   gridHelper.position.y = 0.001;
   gridHelper.name = 'gridHelper';
   scene.add(gridHelper);

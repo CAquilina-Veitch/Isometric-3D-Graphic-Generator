@@ -1,13 +1,14 @@
 .viewport {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 30% 30%, #1a1e2a 0%, #0f1115 70%);
+  background:
+    radial-gradient(ellipse at 30% 30%, #f4ecdc 0%, #dcc9a4 100%);
   overflow: hidden;
   user-select: none;
 }
 
 .viewport[data-kind='preview'] {
-  background: radial-gradient(circle at 50% 50%, #14171f 0%, #0a0c10 80%);
+  background: radial-gradient(ellipse at 50% 40%, #ece1c6 0%, #c9b48d 100%);
 }
 
 .canvas {

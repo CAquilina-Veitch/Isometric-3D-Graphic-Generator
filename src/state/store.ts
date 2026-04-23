@@ -8,8 +8,7 @@ export type Tool =
   | 'stairs'
   | 'slope'
   | 'brush'
-  | 'gizmo'
-  | 'orbit'
+  | 'erase'
   | 'cutout';
 
 export type RightTab = 'properties' | 'camera' | 'light' | 'render';
@@ -74,16 +73,18 @@ export type RenderState = {
   exportScale: 1 | 2 | 4;
 };
 
-const DEFAULT_MATERIALS: Material[] = [
-  { id: 'def-sky',   name: 'Sky',     textureKind: 'plain',   color: '#8aa2d4', roughness: 0.55, metalness: 0.05 },
-  { id: 'def-sand',  name: 'Sand',    textureKind: 'checker', color: '#c4a47a', secondaryColor: '#8a7454', roughness: 0.7, metalness: 0.0 },
-  { id: 'def-moss',  name: 'Moss',    textureKind: 'noise',   color: '#8cbfa3', roughness: 0.8, metalness: 0.0 },
-  { id: 'def-brick', name: 'Brick',   textureKind: 'brick',   color: '#b38aa8', secondaryColor: '#5a3d54', roughness: 0.75, metalness: 0.0 },
-  { id: 'def-sun',   name: 'Sun',     textureKind: 'plain',   color: '#e0d070', roughness: 0.4, metalness: 0.1 },
-  { id: 'def-ice',   name: 'Ice',     textureKind: 'plain',   color: '#8ce0e0', roughness: 0.3, metalness: 0.15 },
-  { id: 'def-coral', name: 'Coral',   textureKind: 'noise',   color: '#e07a7a', roughness: 0.7, metalness: 0.0 },
-  { id: 'def-slate', name: 'Slate',   textureKind: 'checker', color: '#586070', secondaryColor: '#2e3340', roughness: 0.85, metalness: 0.05 },
-];
+const DEFAULT_GREY_ID = 'mat-default-grey';
+
+function makeDefaultGreyMaterial(): Material {
+  return {
+    id: DEFAULT_GREY_ID,
+    name: 'Default',
+    textureKind: 'plain',
+    color: '#8a8a8a',
+    roughness: 0.6,
+    metalness: 0.05,
+  };
+}
 
 export type StoredScene = {
   id: string;
@@ -103,8 +104,7 @@ type SceneSlice = {
   selectedIds: string[];
   materials: Record<string, Material>;
   paletteOrder: string[];
-  activeBrushMaterialId: string | null;
-  defaultRotationIndex: number;
+  activeMaterialId: string | null;
   renderCameraState: RenderCameraState;
   lightState: LightState;
   renderState: RenderState;
@@ -128,7 +128,7 @@ type SceneActions = {
   addMaterial: (m: Material) => void;
   updateMaterial: (id: string, patch: Partial<Material>) => void;
   removeMaterial: (id: string) => void;
-  setActiveBrushMaterial: (id: string | null) => void;
+  setActiveMaterial: (id: string | null) => void;
   replacePalette: (materials: Material[]) => void;
   updateRenderCamera: (patch: Partial<RenderCameraState>) => void;
   updateLight: (patch: Partial<LightState>) => void;
@@ -175,10 +175,9 @@ type UiActions = {
 
 export type Store = SceneSlice & SceneActions & UiSlice & UiActions;
 
-const seededMaterials: Record<string, Material> = Object.fromEntries(
-  DEFAULT_MATERIALS.map((m) => [m.id, m]),
-);
-const defaultRotationIds = DEFAULT_MATERIALS.map((m) => m.id);
+const initialGrey = makeDefaultGreyMaterial();
+const seededMaterials: Record<string, Material> = { [initialGrey.id]: initialGrey };
+const seededPaletteOrder = [initialGrey.id];
 
 const DEFAULT_RENDER_CAMERA: RenderCameraState = {
   isoAnglePreset: 30,
@@ -236,9 +235,8 @@ export const useStore = create<Store>((set, get) => ({
   activeCutoutImageId: null,
   selectedIds: [],
   materials: seededMaterials,
-  paletteOrder: defaultRotationIds.slice(),
-  activeBrushMaterialId: defaultRotationIds[0] ?? null,
-  defaultRotationIndex: 0,
+  paletteOrder: seededPaletteOrder.slice(),
+  activeMaterialId: seededPaletteOrder[0] ?? null,
   renderCameraState: { ...DEFAULT_RENDER_CAMERA },
   lightState: { ...DEFAULT_LIGHT },
   renderState: { ...DEFAULT_RENDER },
@@ -248,13 +246,8 @@ export const useStore = create<Store>((set, get) => ({
   activeSceneId: initialScene.id,
 
   addPrimitive: (input) => {
-    const order = get().paletteOrder;
     const materialId =
-      input.materialId !== undefined
-        ? input.materialId
-        : order.length > 0
-        ? order[get().defaultRotationIndex % order.length]
-        : null;
+      input.materialId !== undefined ? input.materialId : get().activeMaterialId;
     set((s) => ({
       primitives: [
         ...s.primitives,
@@ -267,7 +260,6 @@ export const useStore = create<Store>((set, get) => ({
           materialId,
         },
       ],
-      defaultRotationIndex: s.defaultRotationIndex + 1,
       sceneDirty: s.sceneDirty + 1,
     }));
   },
@@ -336,19 +328,22 @@ export const useStore = create<Store>((set, get) => ({
     set((s) => {
       const next = { ...s.materials };
       delete next[id];
+      const nextOrder = s.paletteOrder.filter((pid) => pid !== id);
       return {
         materials: next,
-        paletteOrder: s.paletteOrder.filter((pid) => pid !== id),
-        activeBrushMaterialId:
-          s.activeBrushMaterialId === id ? null : s.activeBrushMaterialId,
+        paletteOrder: nextOrder,
+        activeMaterialId:
+          s.activeMaterialId === id
+            ? nextOrder[0] ?? null
+            : s.activeMaterialId,
       };
     }),
-  setActiveBrushMaterial: (id) => set({ activeBrushMaterialId: id }),
+  setActiveMaterial: (id) => set({ activeMaterialId: id }),
   replacePalette: (materials) =>
     set(() => ({
       materials: Object.fromEntries(materials.map((m) => [m.id, m])),
       paletteOrder: materials.map((m) => m.id),
-      activeBrushMaterialId: materials[0]?.id ?? null,
+      activeMaterialId: materials[0]?.id ?? null,
     })),
   updateRenderCamera: (patch) =>
     set((s) => ({
@@ -427,6 +422,7 @@ export const useStore = create<Store>((set, get) => ({
   newProject: () =>
     set(() => {
       const scene = makeEmptyScene('Scene 1');
+      const grey = makeDefaultGreyMaterial();
       return {
         projectId: `proj-${Date.now().toString(36)}`,
         projectName: 'Untitled Project',
@@ -436,6 +432,9 @@ export const useStore = create<Store>((set, get) => ({
         cutouts: scene.cutouts,
         cutoutImages: {},
         activeCutoutImageId: null,
+        materials: { [grey.id]: grey },
+        paletteOrder: [grey.id],
+        activeMaterialId: grey.id,
         renderCameraState: scene.renderCameraState,
         lightState: scene.lightState,
         renderState: scene.renderState,

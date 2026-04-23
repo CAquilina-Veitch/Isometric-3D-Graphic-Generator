@@ -1,4 +1,13 @@
 import { useState } from 'react';
+import {
+  Download,
+  Eye,
+  FilePlus,
+  FolderOpen,
+  Redo2,
+  Save,
+  Undo2,
+} from 'lucide-react';
 import { useStore } from '../state/store';
 import { undo, redo, useHistoryState } from '../hooks/useHistory';
 import { exportPNG } from '../utils/export';
@@ -134,17 +143,23 @@ export default function Toolbar() {
 
       <div className={styles.right}>
         <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
-          ⎌
+          <Undo2 size={16} strokeWidth={1.9} />
         </button>
         <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
-          ⎌
+          <Redo2 size={16} strokeWidth={1.9} />
         </button>
         <div className={styles.sep} />
-        <button onClick={onNew} title="New project">New</button>
-        <button onClick={onLoad} title="Load project">Load</button>
-        <button onClick={onSave} title="Save project to localStorage">Save</button>
+        <button onClick={onNew} title="New project">
+          <FilePlus size={16} strokeWidth={1.9} />
+        </button>
+        <button onClick={onLoad} title="Load project">
+          <FolderOpen size={16} strokeWidth={1.9} />
+        </button>
+        <button onClick={onSave} title="Save project to localStorage">
+          <Save size={16} strokeWidth={1.9} />
+        </button>
         <button onClick={() => exportPNG()} title="Download scene as PNG">
-          Export
+          <Download size={16} strokeWidth={1.9} />
         </button>
         <div className={styles.sep} />
         <button
@@ -152,7 +167,7 @@ export default function Toolbar() {
           onClick={togglePreview}
           title="Toggle render preview"
         >
-          ⧉ Preview
+          <Eye size={16} strokeWidth={1.9} />
         </button>
       </div>
     </header>

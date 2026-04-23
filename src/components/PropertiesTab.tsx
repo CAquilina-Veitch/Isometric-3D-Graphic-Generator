@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStore, type Cutout, type Primitive } from '../state/store';
 import { record } from '../hooks/useHistory';
 import styles from './RightPanel.module.css';
@@ -10,15 +10,22 @@ type Selection =
 
 export default function PropertiesTab() {
   const selectedIds = useStore((s) => s.selectedIds);
-  const selection = useStore<Selection>((s) => {
+  const primitives = useStore((s) => s.primitives);
+  const cutouts = useStore((s) => s.cutouts);
+
+  // IMPORTANT: compute the tagged selection OUTSIDE the store selector.
+  // Returning `{ kind, value }` from inside a Zustand selector creates a fresh
+  // object on every store read, which makes React 19's useSyncExternalStore
+  // treat every snapshot as different → "Maximum update depth exceeded".
+  const selection = useMemo<Selection>(() => {
     if (selectedIds.length !== 1) return null;
     const id = selectedIds[0];
-    const primitive = s.primitives.find((p) => p.id === id);
+    const primitive = primitives.find((p) => p.id === id);
     if (primitive) return { kind: 'primitive', value: primitive };
-    const cutout = s.cutouts.find((c) => c.id === id);
+    const cutout = cutouts.find((c) => c.id === id);
     if (cutout) return { kind: 'cutout', value: cutout };
     return null;
-  });
+  }, [selectedIds, primitives, cutouts]);
 
   if (!selection) {
     return (

@@ -263,7 +263,14 @@ export function createAdaptiveBoxGeometry(
       let z = base[2];
       for (const e of edgesAtCorner) {
         if (!(bevelMask & (1 << e))) continue;
+        // The bevel should terminate cleanly at a covered-face boundary.
+        // At corner c, the "third face" perpendicular to edge e is the face at c
+        // whose normal axis matches e's axis. If that face is covered, the edge
+        // is continuous across a shared boundary — no inset here.
         const axis = EDGE_AXIS[e];
+        const sign = axis === 0 ? sx : axis === 1 ? sy : sz;
+        const thirdFaceId = (axis * 2 + (sign === 1 ? 0 : 1)) as FaceId;
+        if (covered.has(thirdFaceId)) continue;
         // Inset in the direction OPPOSITE the corner sign on the edge's axis.
         if (axis === 0) x -= sx * b;
         else if (axis === 1) y -= sy * b;
@@ -285,14 +292,16 @@ export function createAdaptiveBoxGeometry(
     uvs.push(0, 0, 1, 0, 1, 1);
   };
 
-  // Each face corners, in CCW order relative to the face normal.
+  // Each face's corners, CCW as seen from outside the cube in Three.js's
+  // right-handed coordinate system (so the cross product of the first three
+  // vertices points outward along the face normal).
   const FACE_CORNERS: Record<FaceId, [number, number, number, number]> = {
-    0: [1, 5, 6, 2],
-    1: [0, 3, 7, 4],
-    2: [3, 2, 6, 7],
-    3: [0, 4, 5, 1],
-    4: [4, 7, 6, 5],
-    5: [0, 1, 2, 3],
+    0: [2, 6, 5, 1], // +X
+    1: [4, 7, 3, 0], // -X
+    2: [7, 6, 2, 3], // +Y
+    3: [1, 5, 4, 0], // -Y
+    4: [5, 6, 7, 4], // +Z
+    5: [3, 2, 1, 0], // -Z
   };
 
   for (let f = 0; f < 6; f++) {
@@ -309,25 +318,37 @@ export function createAdaptiveBoxGeometry(
     emitTri(p0, p2, p3, normal);
   }
 
-  // Each bevelled edge: emit chamfer strip (quad).
-  const emitQuad = (
-    pa: readonly [number, number, number],
-    pb: readonly [number, number, number],
-    pc: readonly [number, number, number],
-    pd: readonly [number, number, number],
+  // Each bevelled edge: emit a chamfer strip. Winding is not assumed — each
+  // triangle flips itself if needed so its normal agrees with the expected
+  // outward direction (average of the two adjacent face normals). This is
+  // robust to EDGE_ENDPOINTS / EDGE_ADJACENT_FACES orientation inconsistencies
+  // and to the tapered/degenerate quads that happen at shared edges.
+  const emitOrientedTri = (
+    p0: readonly [number, number, number],
+    p1: readonly [number, number, number],
+    p2: readonly [number, number, number],
+    outward: readonly [number, number, number],
   ) => {
-    // Compute normal from cross product.
-    const u: [number, number, number] = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
-    const v: [number, number, number] = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
-    const n: [number, number, number] = [
-      u[1] * v[2] - u[2] * v[1],
-      u[2] * v[0] - u[0] * v[2],
-      u[0] * v[1] - u[1] * v[0],
-    ];
-    const len = Math.hypot(n[0], n[1], n[2]) || 1;
-    const nn: [number, number, number] = [n[0] / len, n[1] / len, n[2] / len];
-    emitTri(pa, pb, pc, nn);
-    emitTri(pa, pc, pd, nn);
+    const ux = p1[0] - p0[0];
+    const uy = p1[1] - p0[1];
+    const uz = p1[2] - p0[2];
+    const vx = p2[0] - p0[0];
+    const vy = p2[1] - p0[1];
+    const vz = p2[2] - p0[2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len < 1e-9) return; // degenerate — skip
+    const inx = nx / len;
+    const iny = ny / len;
+    const inz = nz / len;
+    const dot = inx * outward[0] + iny * outward[1] + inz * outward[2];
+    if (dot >= 0) {
+      emitTri(p0, p1, p2, [inx, iny, inz]);
+    } else {
+      emitTri(p0, p2, p1, [-inx, -iny, -inz]);
+    }
   };
 
   for (let e = 0; e < 12; e++) {
@@ -341,8 +362,17 @@ export function createAdaptiveBoxGeometry(
     const bFa = faceCornerPos[cb][fa];
     const bFb = faceCornerPos[cb][fb];
     if (!aFa || !aFb || !bFa || !bFb) continue;
-    // Quad: aFa → bFa → bFb → aFb, oriented outward.
-    emitQuad(aFa, bFa, bFb, aFb);
+    const nA = FACE_NORMAL[fa];
+    const nB = FACE_NORMAL[fb];
+    const ox = nA[0] + nB[0];
+    const oy = nA[1] + nB[1];
+    const oz = nA[2] + nB[2];
+    const olen = Math.hypot(ox, oy, oz) || 1;
+    const outward: [number, number, number] = [ox / olen, oy / olen, oz / olen];
+    // Triangulate as two tris across the (aFa, bFa, bFb, aFb) quad.
+    // Winding is fixed up per-triangle by emitOrientedTri.
+    emitOrientedTri(aFa, bFa, bFb, outward);
+    emitOrientedTri(aFa, bFb, aFb, outward);
   }
 
   // Corner fillets: where all 3 adjacent edges at a corner are bevelled and none of

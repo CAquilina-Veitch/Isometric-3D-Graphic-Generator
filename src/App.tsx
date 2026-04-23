@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import Toolbar from './components/Toolbar';
 import ToolRail from './components/ToolRail';
-import ContextPanel from './components/ContextPanel';
+import MaterialsPanel from './components/MaterialsPanel';
 import RightPanel from './components/RightPanel';
 import ViewportSplit from './components/ViewportSplit';
 import Overlays from './components/Overlays';
@@ -44,7 +44,7 @@ export default function App() {
     <div className={styles.app}>
       <Toolbar />
       <ToolRail />
-      <ContextPanel />
+      <MaterialsPanel />
       <ViewportSplit />
       <RightPanel />
       <Overlays />

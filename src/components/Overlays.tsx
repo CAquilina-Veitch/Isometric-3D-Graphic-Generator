@@ -4,17 +4,19 @@ import styles from './Overlays.module.css';
 const SHORTCUTS: { keys: string; description: string }[] = [
   { keys: 'V', description: 'Select tool' },
   { keys: '1 / 2 / 3 / 4', description: 'Cube / Tile / Stairs / Slope' },
-  { keys: 'C', description: 'Cutout tool' },
   { keys: 'B', description: 'Brush tool' },
-  { keys: 'G', description: 'Move (gizmo) tool' },
-  { keys: 'O', description: 'Orbit tool (passive)' },
+  { keys: 'E', description: 'Erase tool' },
+  { keys: 'C', description: 'Cutout tool' },
   { keys: 'R', description: 'Rotate selection 90° / rotate placement ghost' },
   { keys: 'Del / Backspace', description: 'Delete selection' },
   { keys: 'Esc', description: 'Deselect / exit placement' },
   { keys: 'Ctrl+Z', description: 'Undo' },
   { keys: 'Ctrl+Shift+Z / Ctrl+Y', description: 'Redo' },
   { keys: '?', description: 'Toggle this help' },
-  { keys: 'Middle / Right drag', description: 'Dolly / Pan editor camera' },
+  { keys: 'Scroll', description: 'Zoom editor camera' },
+  { keys: 'Middle-drag', description: 'Pan editor camera' },
+  { keys: 'Right-drag', description: 'Orbit editor camera' },
+  { keys: 'Alt + Left-drag', description: 'Orbit (trackpad fallback)' },
 ];
 
 export default function Overlays() {

@@ -3,6 +3,7 @@ import { useStore, type Cutout, type CutoutImage, type Material, type Primitive 
 import { getScene } from './sceneSetup';
 import { applyTransform, buildGeometry, createMeshForPrimitive, createThreeMaterial } from './primitives';
 import { applyCutoutTransform, createCutoutMesh } from './billboards';
+import { getTexture } from './textures';
 
 const PRIMITIVES_GROUP = 'primitivesGroup';
 const CUTOUTS_GROUP = 'cutoutsGroup';
@@ -111,15 +112,23 @@ function reconcilePrimitives(
   for (const p of primitives) {
     seen.add(p.id);
     const existing = meshById.get(p.id);
+    const materialRef = resolveMaterial(p.materialId);
     if (!existing) {
-      const mesh = createMeshForPrimitive(p, resolveMaterial(p.materialId), primitives);
+      const mesh = createMeshForPrimitive(p, materialRef, primitives);
+      mesh.userData.materialRef = materialRef;
       meshById.set(p.id, mesh);
       group.add(mesh);
     } else {
       applyTransform(existing, p);
       if (existing.userData.materialId !== p.materialId) {
-        swapMaterial(existing, resolveMaterial(p.materialId));
+        swapMaterial(existing, materialRef);
         existing.userData.materialId = p.materialId;
+        existing.userData.materialRef = materialRef;
+      } else if (existing.userData.materialRef !== materialRef) {
+        // Same material id, but the material object's contents changed.
+        // Mutate the live THREE material in place so we don't recompile shaders.
+        applyMaterialProps(existing.material, materialRef);
+        existing.userData.materialRef = materialRef;
       }
       // Rebuild geometry if adaptive flags changed (or if this is adaptive-capable
       // and we haven't yet). This is a diff on the precomputed key string.
@@ -140,6 +149,27 @@ function reconcilePrimitives(
       group.remove(mesh);
       meshById.delete(id);
     }
+  }
+}
+
+function applyMaterialProps(
+  threeMat: THREE.Material | THREE.Material[],
+  material: Material | null,
+) {
+  if (!material) return;
+  const mat = Array.isArray(threeMat) ? threeMat[0] : threeMat;
+  if (!(mat instanceof THREE.MeshStandardMaterial)) return;
+  mat.color.set(material.color);
+  mat.roughness = material.roughness;
+  mat.metalness = material.metalness;
+  const nextMap = getTexture({
+    kind: material.textureKind,
+    color: material.color,
+    secondaryColor: material.secondaryColor,
+  });
+  if (mat.map !== nextMap) {
+    mat.map = nextMap;
+    mat.needsUpdate = true;
   }
 }
 

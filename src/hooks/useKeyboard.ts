@@ -57,14 +57,11 @@ export function useKeyboard() {
         case 'b':
           s.setActiveTool('brush');
           return;
+        case 'e':
+          s.setActiveTool('erase');
+          return;
         case 'c':
           s.setActiveTool('cutout');
-          return;
-        case 'g':
-          s.setActiveTool('gizmo');
-          return;
-        case 'o':
-          s.setActiveTool('orbit');
           return;
         case 'r': {
           if (PLACEMENT_TOOLS.includes(s.activeTool)) {
