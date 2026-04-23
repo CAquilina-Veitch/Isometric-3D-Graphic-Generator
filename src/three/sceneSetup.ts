@@ -16,10 +16,12 @@ export function getScene(): THREE.Scene {
 
   const scene = new THREE.Scene();
 
-  ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  // Initial values match DEFAULT_LIGHT in store.ts — physically-correct lighting
+  // (three.js ≥r155) needs ~π× the numeric intensity of the pre-r155 scale.
+  ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
   scene.add(ambientLight);
 
-  directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
+  directionalLight = new THREE.DirectionalLight(0xffffff, 3.5);
   directionalLight.position.set(8, 14, 6);
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.set(2048, 2048);

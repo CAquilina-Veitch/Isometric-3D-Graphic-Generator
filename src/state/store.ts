@@ -210,8 +210,10 @@ const DEFAULT_RENDER_CAMERA: RenderCameraState = {
 };
 
 const DEFAULT_LIGHT: LightState = {
-  directionalIntensity: 1.1,
-  ambientIntensity: 0.35,
+  // Three.js ≥0.155 uses physically-correct light intensities (≈π× smaller scale
+  // than pre-r155). Defaults here are ~π× the old look so new scenes read bright.
+  directionalIntensity: 3.5,
+  ambientIntensity: 1.1,
   ambientColor: '#ffffff',
   azimuthDeg: 40,
   elevationDeg: 55,

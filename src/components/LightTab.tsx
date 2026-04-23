@@ -11,8 +11,8 @@ export default function LightTab() {
       <Slider
         label="Intensity"
         min={0}
-        max={2}
-        step={0.05}
+        max={10}
+        step={0.1}
         value={state.directionalIntensity}
         onChange={(v) => update({ directionalIntensity: v })}
       />
@@ -46,7 +46,7 @@ export default function LightTab() {
       <Slider
         label="Intensity"
         min={0}
-        max={1}
+        max={5}
         step={0.05}
         value={state.ambientIntensity}
         onChange={(v) => update({ ambientIntensity: v })}
