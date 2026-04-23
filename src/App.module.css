@@ -1,0 +1,13 @@
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns:
+    var(--rail-width) var(--context-width) 1fr var(--right-width);
+  grid-template-rows: var(--toolbar-height) 1fr;
+  grid-template-areas:
+    'toolbar toolbar toolbar toolbar'
+    'rail    context viewport right';
+  background: var(--bg-0);
+  overflow: hidden;
+}

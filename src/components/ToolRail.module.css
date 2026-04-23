@@ -1,0 +1,40 @@
+.rail {
+  grid-area: rail;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+  padding: 6px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+}
+
+.tool {
+  padding: 0;
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+  border-color: var(--border);
+}
+
+.tool[data-active='true'] {
+  background: var(--accent);
+  color: var(--bg-0);
+  border-color: var(--accent);
+}
+
+.icon {
+  font-size: 16px;
+  line-height: 1;
+}

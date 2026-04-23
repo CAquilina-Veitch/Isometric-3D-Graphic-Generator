@@ -1,0 +1,25 @@
+.split {
+  grid-area: viewport;
+  display: grid;
+  grid-template-columns: 65fr 1px 35fr;
+  background: var(--bg-0);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.split[data-preview='false'] {
+  grid-template-columns: 1fr;
+}
+
+.editorPane,
+.previewPane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.divider {
+  background: var(--border);
+}

@@ -1,0 +1,36 @@
+import { useStore } from '../state/store';
+import styles from './Toolbar.module.css';
+
+export default function Toolbar() {
+  const previewVisible = useStore((s) => s.previewVisible);
+  const togglePreview = useStore((s) => s.togglePreview);
+
+  return (
+    <header className={styles.toolbar}>
+      <div className={styles.left}>
+        <span className={styles.project}>Untitled Project</span>
+        <div className={styles.sep} />
+        <div className={styles.tabs}>
+          <button className={styles.tab} data-active="true">Scene 1</button>
+          <button className={styles.tab}>+</button>
+        </div>
+      </div>
+
+      <div className={styles.right}>
+        <button title="Undo (Ctrl+Z)">⎌</button>
+        <button title="Redo (Ctrl+Shift+Z)">⎌</button>
+        <div className={styles.sep} />
+        <button>Save</button>
+        <button>Export</button>
+        <div className={styles.sep} />
+        <button
+          data-active={previewVisible}
+          onClick={togglePreview}
+          title="Toggle render preview"
+        >
+          ⧉ Preview
+        </button>
+      </div>
+    </header>
+  );
+}
