@@ -178,12 +178,18 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
         // Inside the silhouette — let the cutout itself render here.
         if (sampleAlphaAt(pos) >= 0.5) discard;
 
-        // TODO(user): write the dilation sample loop.
-        // Decide if any opaque pixel lies within 'thickness' world units of 'pos'.
-        // If so, set hit = true and this fragment is part of the outline ring.
-        // Offsets MUST be in world units (not UV); use sampleAlphaAt(pos + offset).
+        // Dilation sample: step outward in a ring of directions at 'thickness' distance.
+        // If any direction hits an opaque pixel, this fragment is part of the outline.
+        // 16 taps on a circle is plenty for clean edges at typical thickness values,
+        // and we also check half-radius to catch thin features.
         bool hit = false;
-        // ... your sampling loop here ...
+        const int TAPS = 16;
+        for (int i = 0; i < TAPS; i++) {
+          float a = (float(i) / float(TAPS)) * 6.2831853;
+          vec2 dir = vec2(cos(a), sin(a));
+          if (sampleAlphaAt(pos + dir * thickness) >= 0.5) { hit = true; break; }
+          if (sampleAlphaAt(pos + dir * (thickness * 0.5)) >= 0.5) { hit = true; break; }
+        }
 
         if (!hit) discard;
         gl_FragColor = vec4(outlineColor, 1.0);

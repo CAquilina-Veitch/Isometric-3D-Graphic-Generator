@@ -1,8 +1,13 @@
 import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { useStore, type Primitive, type Vec3 } from '../state/store';
+import { useStore, type Cutout, type Primitive, type Vec3 } from '../state/store';
 import { GRID_STEP } from '../utils/snap';
 import { beginTx, commitTx } from '../hooks/useHistory';
+
+/** Target of an attached gizmo — a primitive (snap to grid) or a cutout (free). */
+type AttachTarget =
+  | { kind: 'primitive'; value: Primitive }
+  | { kind: 'cutout'; value: Cutout };
 
 export type GizmoHost = {
   camera: THREE.Camera;
@@ -29,7 +34,8 @@ function snapPrimitivePosition(
 }
 
 export function createGizmo(host: GizmoHost): {
-  attach: (mesh: THREE.Mesh, primitive: Primitive) => void;
+  attachPrimitive: (mesh: THREE.Object3D, primitive: Primitive) => void;
+  attachCutout: (mesh: THREE.Object3D, cutout: Cutout) => void;
   detach: () => void;
   dispose: () => void;
 } {
@@ -43,7 +49,7 @@ export function createGizmo(host: GizmoHost): {
   helper.userData.editorOnly = true;
   host.scene.add(helper);
 
-  let currentPrimitive: Primitive | null = null;
+  let target: AttachTarget | null = null;
 
   controls.addEventListener('dragging-changed', (ev) => {
     const dragging = (ev as unknown as { value: boolean }).value;
@@ -52,32 +58,39 @@ export function createGizmo(host: GizmoHost): {
       beginTx();
       return;
     }
-    if (!controls.object || !currentPrimitive) {
+    if (!controls.object || !target) {
       commitTx();
       return;
     }
-
-    const snapped = snapPrimitivePosition(
-      currentPrimitive.type,
-      {
-        x: controls.object.position.x,
-        y: controls.object.position.y,
-        z: controls.object.position.z,
-      },
-      currentPrimitive.position,
-    );
-    useStore.getState().updatePrimitive(currentPrimitive.id, { position: snapped });
+    const dragged: Vec3 = {
+      x: controls.object.position.x,
+      y: controls.object.position.y,
+      z: controls.object.position.z,
+    };
+    if (target.kind === 'primitive') {
+      // Primitives snap to their grid so stacks stay neat.
+      const snapped = snapPrimitivePosition(target.value.type, dragged, target.value.position);
+      useStore.getState().updatePrimitive(target.value.id, { position: snapped });
+    } else {
+      // Cutouts are free-positioned — no snap; just store where the user dropped them.
+      useStore.getState().updateCutout(target.value.id, { position: dragged });
+    }
     commitTx();
   });
 
   return {
-    attach(mesh, primitive) {
-      currentPrimitive = primitive;
+    attachPrimitive(mesh, primitive) {
+      target = { kind: 'primitive', value: primitive };
+      controls.attach(mesh);
+      helper.visible = true;
+    },
+    attachCutout(mesh, cutout) {
+      target = { kind: 'cutout', value: cutout };
       controls.attach(mesh);
       helper.visible = true;
     },
     detach() {
-      currentPrimitive = null;
+      target = null;
       controls.detach();
       helper.visible = false;
     },

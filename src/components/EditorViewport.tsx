@@ -18,13 +18,19 @@ import {
   type DragLockState,
 } from '../three/placementDrag';
 import {
+  getCutoutsGroupObject,
   getPrimitivesGroupObject,
   getSelectableMeshes,
   resolveHit,
 } from '../three/sceneSync';
 import { createGizmo } from '../three/gizmo';
 import { useStore, nextPrimitiveId, type Primitive, type PrimitiveType } from '../state/store';
-import { groundPlacement, gridBoundsXZ, withinGridBounds } from '../utils/snap';
+import {
+  groundPlacement,
+  gridBoundsXZ,
+  withinGridBounds,
+  groundCenterY,
+} from '../utils/snap';
 import { beginTx, commitTx, record } from '../hooks/useHistory';
 import styles from './Viewport.module.css';
 
@@ -197,17 +203,87 @@ export default function EditorViewport() {
     };
     let placementDrag: PlacementDrag | null = null;
 
-    /** Drop any preview/commit positions that fall outside the N×N grid bounds (when enabled). */
-    const filterByBounds = (
+    /**
+     * Shift+drag rubber-band selection state. Screen coords relative to the viewport
+     * container so they can be fed directly into the overlay div's CSS.
+     */
+    type RubberBand = { downX: number; downY: number; currX: number; currY: number };
+    let rubber: RubberBand | null = null;
+
+    // Overlay div that visualises the rubber band. Kept in the DOM for the lifetime
+    // of the component; toggled with `display`. Sits over the canvas, but ignores
+    // pointer events so drags still reach the canvas.
+    const rubberBandEl = document.createElement('div');
+    rubberBandEl.style.position = 'absolute';
+    rubberBandEl.style.border = '1px dashed #5aa1ff';
+    rubberBandEl.style.background = 'rgba(90, 161, 255, 0.12)';
+    rubberBandEl.style.pointerEvents = 'none';
+    rubberBandEl.style.display = 'none';
+    rubberBandEl.style.zIndex = '10';
+    container.appendChild(rubberBandEl);
+
+    const syncRubberBandDom = () => {
+      if (!rubber) {
+        rubberBandEl.style.display = 'none';
+        return;
+      }
+      const left = Math.min(rubber.downX, rubber.currX);
+      const top = Math.min(rubber.downY, rubber.currY);
+      const width = Math.abs(rubber.currX - rubber.downX);
+      const height = Math.abs(rubber.currY - rubber.downY);
+      rubberBandEl.style.left = `${left}px`;
+      rubberBandEl.style.top = `${top}px`;
+      rubberBandEl.style.width = `${width}px`;
+      rubberBandEl.style.height = `${height}px`;
+      rubberBandEl.style.display = 'block';
+    };
+
+    /** Collect every primitive/cutout whose projected centre falls inside the rubber band. */
+    const applyRubberBandSelection = () => {
+      if (!rubber) return;
+      const minX = Math.min(rubber.downX, rubber.currX);
+      const maxX = Math.max(rubber.downX, rubber.currX);
+      const minY = Math.min(rubber.downY, rubber.currY);
+      const maxY = Math.max(rubber.downY, rubber.currY);
+      const rect = canvas.getBoundingClientRect();
+      const state = useStore.getState();
+      const v = new THREE.Vector3();
+      const picked: string[] = [];
+      const include = (p: { position: { x: number; y: number; z: number }; id: string }) => {
+        v.set(p.position.x, p.position.y, p.position.z).project(camera);
+        const sx = ((v.x + 1) * rect.width) / 2;
+        const sy = ((1 - v.y) * rect.height) / 2;
+        if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) picked.push(p.id);
+      };
+      state.primitives.forEach(include);
+      state.cutouts.forEach(include);
+      state.setSelection(picked);
+    };
+
+    /**
+     * Drop any preview/commit positions that are invalid:
+     *  - Outside the N×N grid bounds (when bounds are enabled)
+     *  - Below the ground plane — a primitive is "on the ground" when its
+     *    centre Y equals groundCenterY(type); anything lower intersects the floor.
+     */
+    const filterValid = (
+      type: PrimitiveType,
       positions: Array<{ x: number; y: number; z: number }>,
     ): Array<{ x: number; y: number; z: number }> => {
       const s = useStore.getState();
-      if (!s.gridBoundsEnabled) return positions;
-      return positions.filter((p) => withinGridBounds(p.x, p.z, s.gridBoundsSize));
+      const minY = groundCenterY(type);
+      return positions.filter((p) => {
+        if (p.y < minY - 1e-6) return false;
+        if (s.gridBoundsEnabled && !withinGridBounds(p.x, p.z, s.gridBoundsSize)) return false;
+        return true;
+      });
     };
 
     const updatePlacementDragGhosts = (drag: PlacementDrag) => {
-      const positions = filterByBounds(lockedPositions(drag.anchor, drag.lock, drag.size));
+      const positions = filterValid(
+        drag.type,
+        lockedPositions(drag.anchor, drag.lock, drag.size),
+      );
       drag.pool.setPositions(positions, useStore.getState().ghostRotationY);
     };
 
@@ -215,8 +291,11 @@ export default function EditorViewport() {
       const pos = resolvePlacement(type, placement);
       if (!pos) return;
       const s = useStore.getState();
-      if (s.gridBoundsEnabled && !withinGridBounds(pos.x, pos.z, s.gridBoundsSize)) {
-        // Outside the bounded floor — hide the hover preview to signal "can't place here".
+      const outOfBounds =
+        s.gridBoundsEnabled && !withinGridBounds(pos.x, pos.z, s.gridBoundsSize);
+      const underground = pos.y < groundCenterY(type) - 1e-6;
+      if (outOfBounds || underground) {
+        // Can't place here — hide the hover preview to signal that.
         removeGhost(scene);
         return;
       }
@@ -267,6 +346,13 @@ export default function EditorViewport() {
     };
 
     const onPointerMove = (ev: PointerEvent) => {
+      if (rubber) {
+        const cRect = container.getBoundingClientRect();
+        rubber.currX = ev.clientX - cRect.left;
+        rubber.currY = ev.clientY - cRect.top;
+        syncRubberBandDom();
+        return;
+      }
       if (placementDrag) {
         // Active mass-placement drag: convert screen delta → per-axis cell deltas,
         // update the lock state machine, and refresh the preview ghosts.
@@ -365,6 +451,17 @@ export default function EditorViewport() {
       if (isGizmoClick(ev)) return;
       if (activeTool === 'select') {
         ev.stopPropagation();
+        if (ev.shiftKey) {
+          // Shift+drag starts a rubber-band selection. Plain click still runs through
+          // trySelectAtPointer below, preserving single-click behaviour.
+          const cRect = container.getBoundingClientRect();
+          const localX = ev.clientX - cRect.left;
+          const localY = ev.clientY - cRect.top;
+          rubber = { downX: localX, downY: localY, currX: localX, currY: localY };
+          syncRubberBandDom();
+          canvas.setPointerCapture(ev.pointerId);
+          return;
+        }
         trySelectAtPointer(ev);
         return;
       }
@@ -409,8 +506,11 @@ export default function EditorViewport() {
         const anchor = resolvePlacement(activeTool, h);
         if (!anchor) return;
         const s = useStore.getState();
-        if (s.gridBoundsEnabled && !withinGridBounds(anchor.x, anchor.z, s.gridBoundsSize)) {
-          // Clicking outside the bounds is a no-op — no anchor, no preview.
+        const anchorOutOfBounds =
+          s.gridBoundsEnabled && !withinGridBounds(anchor.x, anchor.z, s.gridBoundsSize);
+        const anchorUnderground = anchor.y < groundCenterY(activeTool) - 1e-6;
+        if (anchorOutOfBounds || anchorUnderground) {
+          // Can't anchor here — click is a no-op, no preview, no tx.
           return;
         }
         // Switch the hover ghost off; the pool owns all preview rendering during a drag.
@@ -433,10 +533,18 @@ export default function EditorViewport() {
     };
 
     const onPointerUp = (ev: PointerEvent) => {
+      if (rubber) {
+        applyRubberBandSelection();
+        rubber = null;
+        syncRubberBandDom();
+        canvas.releasePointerCapture(ev.pointerId);
+        return;
+      }
       if (placementDrag) {
         // Convert preview → real primitives. A zero-lock session (simple click) still
         // yields exactly one position (the anchor), so click-to-place behaviour survives.
-        const positions = filterByBounds(
+        const positions = filterValid(
+          placementDrag.type,
           lockedPositions(placementDrag.anchor, placementDrag.lock, placementDrag.size),
         );
         const ry = useStore.getState().ghostRotationY;
@@ -480,7 +588,7 @@ export default function EditorViewport() {
     });
 
     const refreshGizmo = () => {
-      // Gizmo auto-attaches to any single selected primitive, regardless of tool.
+      // Gizmo attaches to whatever single thing is selected — primitive or cutout.
       const state = useStore.getState();
       if (state.selectedIds.length !== 1) {
         gizmo.detach();
@@ -488,19 +596,30 @@ export default function EditorViewport() {
       }
       const id = state.selectedIds[0];
       const primitive = state.primitives.find((p) => p.id === id);
-      if (!primitive) {
-        gizmo.detach();
+      if (primitive) {
+        const mesh = getPrimitivesGroupObject().children.find(
+          (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.primitiveId === id,
+        );
+        if (!mesh) {
+          gizmo.detach();
+          return;
+        }
+        gizmo.attachPrimitive(mesh, primitive as Primitive);
         return;
       }
-      const group = getPrimitivesGroupObject();
-      const mesh = group.children.find(
-        (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.primitiveId === id,
-      );
-      if (!mesh) {
-        gizmo.detach();
+      const cutout = state.cutouts.find((c) => c.id === id);
+      if (cutout) {
+        const mesh = getCutoutsGroupObject().children.find(
+          (c) => c.userData.cutoutId === id,
+        );
+        if (!mesh) {
+          gizmo.detach();
+          return;
+        }
+        gizmo.attachCutout(mesh, cutout);
         return;
       }
-      gizmo.attach(mesh, primitive as Primitive);
+      gizmo.detach();
     };
 
     const cancelPlacementDrag = () => {
@@ -520,6 +639,10 @@ export default function EditorViewport() {
       if (!isPlacementTool(tool)) {
         cancelPlacementDrag();
         removeGhost(scene);
+      }
+      if (tool !== 'select' && rubber) {
+        rubber = null;
+        syncRubberBandDom();
       }
       refreshGizmo();
     };
@@ -553,7 +676,11 @@ export default function EditorViewport() {
         if (grid) grid.visible = s.showGrid;
       }
       if (s.activeTool !== prev.activeTool) applyToolState(s.activeTool);
-      if (s.selectedIds !== prev.selectedIds || s.primitives !== prev.primitives) {
+      if (
+        s.selectedIds !== prev.selectedIds ||
+        s.primitives !== prev.primitives ||
+        s.cutouts !== prev.cutouts
+      ) {
         refreshGizmo();
       }
       if (s.ghostRotationY !== prev.ghostRotationY && isPlacementTool(activeTool)) {
@@ -581,6 +708,7 @@ export default function EditorViewport() {
       canvas.removeEventListener('contextmenu', onContextMenu);
       cancelPlacementDrag();
       removeGhost(scene);
+      if (rubberBandEl.parentNode === container) container.removeChild(rubberBandEl);
       unsubStore();
     };
   }, []);

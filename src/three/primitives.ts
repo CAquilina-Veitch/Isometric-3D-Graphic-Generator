@@ -162,8 +162,10 @@ function createStairsGeometry(): THREE.BufferGeometry {
   //   shape Y (height) → primitive Y
   //   extrude Z (0..1) → primitive X (0..-1)
   geometry.rotateY(Math.PI / 2);
-  // Re-center: extrusion spans X ∈ [-1, 0] → shift to [-0.5, 0.5].
-  geometry.translate(0.5, 0, 0);
+  // After rotateY(π/2) the extrusion spans X ∈ [0, 1] (three.js matrix maps
+  // +Z → +X for that angle). Shift by -0.5 so the mesh is centered at origin —
+  // otherwise Y-rotation pivots off-centre and swings outside the tile footprint.
+  geometry.translate(-0.5, 0, 0);
   return geometry;
 }
 

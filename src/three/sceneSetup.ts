@@ -114,11 +114,15 @@ export function applyLightState(state: {
   ambientColor?: string;
   azimuthDeg: number;
   elevationDeg: number;
+  shadowSoftness?: number;
 }) {
   if (!ambientLight || !directionalLight) return;
   ambientLight.intensity = state.ambientIntensity;
   ambientLight.color.set(state.ambientColor ?? '#ffffff');
   directionalLight.intensity = state.directionalIntensity;
+  // shadow.radius is the PCF blur radius; only has an effect with
+  // PCFSoftShadowMap (which we use). Slider 0..3 → radius 0..12.
+  directionalLight.shadow.radius = Math.max(0, (state.shadowSoftness ?? 1) * 4);
   const az = (state.azimuthDeg * Math.PI) / 180;
   const el = (state.elevationDeg * Math.PI) / 180;
   const distance = 14;
@@ -203,9 +207,9 @@ export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  // PCFShadowMap, not the deprecated PCFSoftShadowMap. Normal-bias on the
-  // directional light handles the softening we used to get from PCFSoft.
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  // PCFSoftShadowMap so shadow.radius (driven by the Light tab's softness slider)
+  // actually controls blur. Normal-bias on the directional light handles acne/leak.
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   return renderer;
 }
 
