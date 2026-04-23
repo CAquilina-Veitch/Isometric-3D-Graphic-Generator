@@ -8,6 +8,7 @@ import {
   resizeOrthoCamera,
 } from '../three/sceneSetup';
 import { getOrCreateGhost, removeGhost } from '../three/ghost';
+import { getPrimitivesGroupObject, primitiveIdFor } from '../three/sceneSync';
 import { useStore, nextPrimitiveId, type PrimitiveType } from '../state/store';
 import { groundPlacement, gridCellKey } from '../utils/snap';
 import styles from './Viewport.module.css';
@@ -98,8 +99,29 @@ export default function EditorViewport() {
       }
     };
 
+    const trySelectAtPointer = (ev: PointerEvent): boolean => {
+      const rect = canvas.getBoundingClientRect();
+      pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNDC, camera);
+      const group = getPrimitivesGroupObject();
+      const hits = raycaster.intersectObjects(group.children, false);
+      if (hits.length === 0) {
+        useStore.getState().setSelection([]);
+        return false;
+      }
+      const id = primitiveIdFor(hits[0].object);
+      useStore.getState().setSelection(id ? [id] : []);
+      return true;
+    };
+
     const onPointerDown = (ev: PointerEvent) => {
       if (ev.button !== 0) return;
+      if (activeTool === 'select') {
+        ev.stopPropagation();
+        trySelectAtPointer(ev);
+        return;
+      }
       const h = getHit(ev);
       if (!h) return;
       if (isPlacementTool(activeTool)) {
@@ -130,12 +152,12 @@ export default function EditorViewport() {
 
     const applyToolState = (tool: typeof activeTool) => {
       activeTool = tool;
-      if (isPlacementTool(tool)) {
+      if (isPlacementTool(tool) || tool === 'select') {
         controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
       } else {
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-        removeGhost(scene);
       }
+      if (!isPlacementTool(tool)) removeGhost(scene);
     };
     applyToolState(activeTool);
 

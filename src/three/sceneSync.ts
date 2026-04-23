@@ -4,6 +4,7 @@ import { getScene } from './sceneSetup';
 import { applyTransform, createMeshForPrimitive } from './primitives';
 
 const PRIMITIVES_GROUP = 'primitivesGroup';
+const SELECTED_EMISSIVE = 0x3a5fd9;
 
 function getPrimitivesGroup(scene: THREE.Scene): THREE.Group {
   const existing = scene.getObjectByName(PRIMITIVES_GROUP);
@@ -21,10 +22,15 @@ export function initSceneSync(): () => void {
   const meshById = new Map<string, THREE.Mesh>();
 
   reconcile(useStore.getState().primitives, group, meshById);
+  applySelection(useStore.getState().selectedIds, meshById);
 
   const unsub = useStore.subscribe((s, prev) => {
     if (s.primitives !== prev.primitives) {
       reconcile(s.primitives, group, meshById);
+      applySelection(s.selectedIds, meshById);
+    }
+    if (s.selectedIds !== prev.selectedIds) {
+      applySelection(s.selectedIds, meshById);
     }
   });
 
@@ -36,6 +42,22 @@ export function initSceneSync(): () => void {
     }
     meshById.clear();
   };
+}
+
+/** Returns the primitive id for a hit mesh, or null if it's not a primitive. */
+export function primitiveIdFor(object: THREE.Object3D | null): string | null {
+  let o: THREE.Object3D | null = object;
+  while (o) {
+    const id = o.userData.primitiveId;
+    if (typeof id === 'string') return id;
+    o = o.parent;
+  }
+  return null;
+}
+
+/** Returns the primitives group for raycasting. */
+export function getPrimitivesGroupObject(): THREE.Group {
+  return getPrimitivesGroup(getScene());
 }
 
 function reconcile(
@@ -55,12 +77,25 @@ function reconcile(
       applyTransform(existing, p);
     }
   }
-  // remove meshes whose primitives are gone
   for (const [id, mesh] of meshById) {
     if (!seen.has(id)) {
       disposeMesh(mesh);
       group.remove(mesh);
       meshById.delete(id);
+    }
+  }
+}
+
+function applySelection(
+  selectedIds: string[],
+  meshById: Map<string, THREE.Mesh>,
+) {
+  const selected = new Set(selectedIds);
+  for (const [id, mesh] of meshById) {
+    const material = mesh.material;
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.emissive.setHex(selected.has(id) ? SELECTED_EMISSIVE : 0x000000);
+      material.emissiveIntensity = selected.has(id) ? 0.35 : 0;
     }
   }
 }

@@ -1,4 +1,5 @@
 import { useStore, type RightTab } from '../state/store';
+import PropertiesTab from './PropertiesTab';
 import styles from './RightPanel.module.css';
 
 const TABS: { id: RightTab; label: string }[] = [
@@ -28,33 +29,12 @@ export default function RightPanel() {
       </nav>
 
       <div className={styles.body}>
-        {activeRightTab === 'properties' && <PropertiesPlaceholder />}
+        {activeRightTab === 'properties' && <PropertiesTab />}
         {activeRightTab === 'camera' && <CameraPlaceholder />}
         {activeRightTab === 'light' && <LightPlaceholder />}
         {activeRightTab === 'render' && <RenderPlaceholder />}
       </div>
     </aside>
-  );
-}
-
-function PropertiesPlaceholder() {
-  return (
-    <div className={styles.section}>
-      <div className={styles.sectionTitle}>Transform</div>
-      <Field label="Position" values={[0, 0, 0]} />
-      <Field label="Rotation" values={[0, 0, 0]} />
-      <Field label="Scale" values={[1, 1, 1]} />
-      <div className={styles.sectionTitle} style={{ marginTop: 14 }}>
-        Material
-      </div>
-      <div className={styles.materialRow}>
-        <div
-          className={styles.swatch}
-          style={{ background: 'hsl(200 55% 55%)' }}
-        />
-        <span className={styles.materialLabel}>(no selection)</span>
-      </div>
-    </div>
   );
 }
 
