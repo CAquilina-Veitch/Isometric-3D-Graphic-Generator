@@ -123,18 +123,48 @@ export function applyTransform(mesh: THREE.Object3D, p: Primitive) {
   mesh.scale.set(p.scale.x, p.scale.y, p.scale.z);
 }
 
+/**
+ * Stairs as the extrusion of a 2D staircase profile. The old mergeBoxes
+ * approach stacked four whole BoxGeometrys; their coplanar back/front faces
+ * overlapped inside the merged mesh and caused shadow-map z-fighting that
+ * showed up as bright slivers at each tread's inner corner. Extruding a
+ * single closed profile gives us one contiguous solid with no internal faces.
+ */
 function createStairsGeometry(): THREE.BufferGeometry {
   const steps = 4;
-  const geometries: THREE.BoxGeometry[] = [];
-  const stepDepth = 1 / steps;
-  const stepHeight = 1 / steps;
+  const inv = 1 / steps;
+  const shape = new THREE.Shape();
+  // Shape is (2D X = primitive Z depth, 2D Y = primitive Y height). We author
+  // it CCW so ExtrudeGeometry emits outward-facing tris. Front of stairs at
+  // +Z, top of stairs at +Y; profile traces front-bottom up to top-back.
+  shape.moveTo(0.5, -0.5);
   for (let i = 0; i < steps; i++) {
-    const h = stepHeight * (i + 1);
-    const box = new THREE.BoxGeometry(1, h, stepDepth);
-    box.translate(0, h / 2 - 0.5, 0.5 - stepDepth * (i + 0.5));
-    geometries.push(box);
+    const topY = -0.5 + (i + 1) * inv;
+    const backZ = 0.5 - (i + 1) * inv;
+    // Up the riser of this step
+    shape.lineTo(0.5 - i * inv, topY);
+    // Back along this step's tread
+    shape.lineTo(backZ, topY);
   }
-  return mergeBoxes(geometries);
+  // From top-back down the back wall and forward along the bottom.
+  shape.lineTo(-0.5, -0.5);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 1,
+    bevelEnabled: false,
+    curveSegments: 1,
+  });
+  // ExtrudeGeometry's native frame: shape in XY, extrusion along +Z. We want
+  // shape in (primitive Z, primitive Y) and extrusion along primitive X.
+  // rotateY(π/2) maps (x, y, z) → (z, y, -x):
+  //   shape X (depth) → primitive Z
+  //   shape Y (height) → primitive Y
+  //   extrude Z (0..1) → primitive X (0..-1)
+  geometry.rotateY(Math.PI / 2);
+  // Re-center: extrusion spans X ∈ [-1, 0] → shift to [-0.5, 0.5].
+  geometry.translate(0.5, 0, 0);
+  return geometry;
 }
 
 /**
@@ -230,28 +260,3 @@ function createSlopeGeometry(): THREE.BufferGeometry {
   return nonIndexed;
 }
 
-function mergeBoxes(boxes: THREE.BoxGeometry[]): THREE.BufferGeometry {
-  const positions: number[] = [];
-  const normals: number[] = [];
-  const indices: number[] = [];
-  let offset = 0;
-  for (const b of boxes) {
-    const pos = b.getAttribute('position');
-    const norm = b.getAttribute('normal');
-    const idx = b.getIndex();
-    for (let i = 0; i < pos.count; i++) {
-      positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
-      normals.push(norm.getX(i), norm.getY(i), norm.getZ(i));
-    }
-    if (idx) {
-      for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i) + offset);
-    }
-    offset += pos.count;
-    b.dispose();
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  g.setIndex(indices);
-  return g;
-}

@@ -27,7 +27,10 @@ export function getScene(): THREE.Scene {
   directionalLight.shadow.camera.right = FLOOR_SIZE / 2;
   directionalLight.shadow.camera.top = FLOOR_SIZE / 2;
   directionalLight.shadow.camera.bottom = -FLOOR_SIZE / 2;
-  directionalLight.shadow.bias = -0.0005;
+  // Small constant bias to suppress acne, plus a normal-offset bias so
+  // concave corners (e.g. tread meeting riser on stairs) don't leak light.
+  directionalLight.shadow.bias = -0.00005;
+  directionalLight.shadow.normalBias = 0.04;
   scene.add(directionalLight);
 
   floorMesh = new THREE.Mesh(
@@ -147,7 +150,9 @@ export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // PCFShadowMap, not the deprecated PCFSoftShadowMap. Normal-bias on the
+  // directional light handles the softening we used to get from PCFSoft.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   return renderer;
 }
 
