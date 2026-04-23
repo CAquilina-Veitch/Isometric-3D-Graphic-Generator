@@ -87,9 +87,10 @@ export function createCutoutMesh(cutout: Cutout, image: CutoutImage): THREE.Mesh
 
 /**
  * Adds / updates / removes a silhouette outline mesh as a child of the cutout.
- * The outline is a slightly-scaled-up copy of the cutout plane; its shader
- * samples the cutout's alpha map and paints all opaque pixels with a single
- * flat color — giving that "paper cutout" offset-silhouette look.
+ * The outline plane is larger than the cutout by `thickness` on every side.
+ * Its shader dilates the cutout's alpha by sampling around each fragment in
+ * world-space, so the outline width is uniform around every edge of the
+ * silhouette regardless of shape or aspect ratio.
  */
 export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
   const existing = mesh.children.find(
@@ -109,7 +110,7 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
   const base = mesh.userData.cutoutBaseSize as { x: number; y: number } | undefined;
   if (!base) return;
 
-  // Size the outline plane slightly larger by a world-space margin on each side.
+  // Outline plane must contain the dilated silhouette: base + thickness per side.
   const outlineX = base.x + 2 * thickness;
   const outlineY = base.y + 2 * thickness;
 
@@ -119,9 +120,11 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
     main instanceof THREE.MeshStandardMaterial ? main.map : null;
 
   if (existing) {
-    // Resize geometry if thickness changed; otherwise just update color.
     const existingMat = existing.material as THREE.ShaderMaterial;
     existingMat.uniforms.outlineColor.value.copy(colorUniform);
+    existingMat.uniforms.thickness.value = thickness;
+    existingMat.uniforms.baseSize.value.set(base.x, base.y);
+    existingMat.uniforms.outlineSize.value.set(outlineX, outlineY);
     if (alphaSource && existingMat.uniforms.map.value !== alphaSource) {
       existingMat.uniforms.map.value = alphaSource;
     }
@@ -141,6 +144,9 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
     uniforms: {
       map: { value: alphaSource },
       outlineColor: { value: colorUniform },
+      thickness: { value: thickness },
+      baseSize: { value: new THREE.Vector2(base.x, base.y) },
+      outlineSize: { value: new THREE.Vector2(outlineX, outlineY) },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -152,10 +158,34 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
     fragmentShader: `
       uniform sampler2D map;
       uniform vec3 outlineColor;
+      uniform float thickness;
+      uniform vec2 baseSize;
+      uniform vec2 outlineSize;
       varying vec2 vUv;
+
+      // Samples the cutout alpha at a point offset from the outline plane's
+      // center, given in world units. Returns 0 if outside the cutout rect.
+      float sampleAlphaAt(vec2 worldOffset) {
+        vec2 uv = worldOffset / baseSize + 0.5;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
+        return texture2D(map, uv).a;
+      }
+
       void main() {
-        vec4 tex = texture2D(map, vUv);
-        if (tex.a < 0.5) discard;
+        // This fragment's position on the plane, in world units, centered.
+        vec2 pos = (vUv - 0.5) * outlineSize;
+
+        // Inside the silhouette — let the cutout itself render here.
+        if (sampleAlphaAt(pos) >= 0.5) discard;
+
+        // TODO(user): write the dilation sample loop.
+        // Decide if any opaque pixel lies within `thickness` world units of `pos`.
+        // If so, set hit = true and this fragment is part of the outline ring.
+        // Offsets MUST be in world units (not UV); use sampleAlphaAt(pos + offset).
+        bool hit = false;
+        // ... your sampling loop here ...
+
+        if (!hit) discard;
         gl_FragColor = vec4(outlineColor, 1.0);
       }
     `,
@@ -166,9 +196,6 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
 
   const outline = new THREE.Mesh(geometry, material);
   outline.name = OUTLINE_MESH_NAME;
-  // Position slightly behind the cutout's local plane so it sits *behind* in
-  // its local frame but still casts a shadow. 0.002 is below typical depth
-  // precision thresholds at this world scale so z-fighting is unlikely.
   outline.position.set(0, 0, -0.002);
   outline.castShadow = true;
   outline.receiveShadow = false;
@@ -179,7 +206,7 @@ export function syncCutoutOutline(mesh: THREE.Mesh, cutout: Cutout) {
 export function applyCutoutTransform(mesh: THREE.Object3D, c: Cutout) {
   mesh.position.set(c.position.x, c.position.y, c.position.z);
   const toRad = Math.PI / 180;
-  mesh.rotation.set(c.rotation.x * toRad, c.rotation.y * toRad, c.rotation.z * toRad);
+  mesh.rotation.set(c.rotation.x * toRad, c.rotation.y * toRad, c.rotation.z * toRad, 'YXZ');
   mesh.scale.set(c.scale.x, c.scale.y, c.scale.z);
 }
 
