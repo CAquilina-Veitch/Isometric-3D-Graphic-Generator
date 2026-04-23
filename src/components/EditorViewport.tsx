@@ -7,10 +7,17 @@ import {
   createRenderer,
   resizeOrthoCamera,
 } from '../three/sceneSetup';
-import { useStore } from '../state/store';
+import { getOrCreateGhost, removeGhost } from '../three/ghost';
+import { useStore, nextPrimitiveId, type PrimitiveType } from '../state/store';
+import { groundPlacement, gridCellKey } from '../utils/snap';
 import styles from './Viewport.module.css';
 
 const ZOOM_SCALE = 10;
+const PLACEMENT_TOOLS: PrimitiveType[] = ['cube', 'tile', 'stairs', 'slope'];
+
+function isPlacementTool(t: string): t is PrimitiveType {
+  return (PLACEMENT_TOOLS as string[]).includes(t);
+}
 
 export default function EditorViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,6 +48,97 @@ export default function EditorViewport() {
       RIGHT: THREE.MOUSE.PAN,
     };
 
+    const raycaster = new THREE.Raycaster();
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const pointerNDC = new THREE.Vector2();
+    const hit = new THREE.Vector3();
+
+    let dragging = false;
+    let activeTool = useStore.getState().activeTool;
+
+    const getHit = (ev: PointerEvent): { x: number; z: number } | null => {
+      const rect = canvas.getBoundingClientRect();
+      pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNDC, camera);
+      const intersected = raycaster.ray.intersectPlane(groundPlane, hit);
+      if (!intersected) return null;
+      return { x: hit.x, z: hit.z };
+    };
+
+    const recentCells = new Set<string>();
+
+    const placeAt = (type: PrimitiveType, x: number, z: number) => {
+      const pos = groundPlacement(type, x, z);
+      const key = gridCellKey(type, pos.x, pos.y, pos.z);
+      if (recentCells.has(key)) return;
+      recentCells.add(key);
+      useStore.getState().addPrimitive({
+        id: nextPrimitiveId(),
+        type,
+        position: pos,
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        materialId: null,
+      });
+    };
+
+    const updateGhost = (type: PrimitiveType, x: number, z: number) => {
+      const pos = groundPlacement(type, x, z);
+      const ghost = getOrCreateGhost(scene, type);
+      ghost.position.set(pos.x, pos.y, pos.z);
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const h = getHit(ev);
+      if (!h) return;
+      if (isPlacementTool(activeTool)) {
+        updateGhost(activeTool, h.x, h.z);
+        if (dragging) placeAt(activeTool, h.x, h.z);
+      }
+    };
+
+    const onPointerDown = (ev: PointerEvent) => {
+      if (ev.button !== 0) return;
+      const h = getHit(ev);
+      if (!h) return;
+      if (isPlacementTool(activeTool)) {
+        ev.stopPropagation();
+        recentCells.clear();
+        dragging = true;
+        placeAt(activeTool, h.x, h.z);
+        canvas.setPointerCapture(ev.pointerId);
+      }
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      if (dragging) {
+        dragging = false;
+        recentCells.clear();
+        canvas.releasePointerCapture(ev.pointerId);
+      }
+    };
+
+    const onPointerLeave = () => {
+      if (!dragging) removeGhost(scene);
+    };
+
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointerleave', onPointerLeave);
+
+    const applyToolState = (tool: typeof activeTool) => {
+      activeTool = tool;
+      if (isPlacementTool(tool)) {
+        controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
+      } else {
+        controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+        removeGhost(scene);
+      }
+    };
+    applyToolState(activeTool);
+
     let frame = 0;
     const tick = () => {
       controls.update();
@@ -56,11 +154,12 @@ export default function EditorViewport() {
     });
     resizeObserver.observe(container);
 
-    const unsubGrid = useStore.subscribe((s, prev) => {
+    const unsubStore = useStore.subscribe((s, prev) => {
       if (s.showGrid !== prev.showGrid) {
         const grid = scene.getObjectByName('gridHelper');
         if (grid) grid.visible = s.showGrid;
       }
+      if (s.activeTool !== prev.activeTool) applyToolState(s.activeTool);
     });
 
     return () => {
@@ -68,7 +167,12 @@ export default function EditorViewport() {
       resizeObserver.disconnect();
       controls.dispose();
       renderer.dispose();
-      unsubGrid();
+      canvas.removeEventListener('pointermove', onPointerMove);
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      canvas.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('pointerleave', onPointerLeave);
+      removeGhost(scene);
+      unsubStore();
     };
   }, []);
 
