@@ -90,7 +90,33 @@ export default function EditorViewport() {
       ghost.position.set(pos.x, pos.y, pos.z);
     };
 
+    const paintedIds = new Set<string>();
+
+    const primitiveAtPointer = (ev: PointerEvent): string | null => {
+      const rect = canvas.getBoundingClientRect();
+      pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNDC, camera);
+      const group = getPrimitivesGroupObject();
+      const hits = raycaster.intersectObjects(group.children, false);
+      if (hits.length === 0) return null;
+      return primitiveIdFor(hits[0].object);
+    };
+
+    const paintAtPointer = (ev: PointerEvent) => {
+      const id = primitiveAtPointer(ev);
+      if (!id || paintedIds.has(id)) return;
+      const materialId = useStore.getState().activeBrushMaterialId;
+      if (!materialId) return;
+      paintedIds.add(id);
+      useStore.getState().updatePrimitive(id, { materialId });
+    };
+
     const onPointerMove = (ev: PointerEvent) => {
+      if (activeTool === 'brush' && dragging) {
+        paintAtPointer(ev);
+        return;
+      }
       const h = getHit(ev);
       if (!h) return;
       if (isPlacementTool(activeTool)) {
@@ -122,6 +148,14 @@ export default function EditorViewport() {
         trySelectAtPointer(ev);
         return;
       }
+      if (activeTool === 'brush') {
+        ev.stopPropagation();
+        paintedIds.clear();
+        dragging = true;
+        paintAtPointer(ev);
+        canvas.setPointerCapture(ev.pointerId);
+        return;
+      }
       const h = getHit(ev);
       if (!h) return;
       if (isPlacementTool(activeTool)) {
@@ -137,6 +171,7 @@ export default function EditorViewport() {
       if (dragging) {
         dragging = false;
         recentCells.clear();
+        paintedIds.clear();
         canvas.releasePointerCapture(ev.pointerId);
       }
     };
@@ -188,7 +223,7 @@ export default function EditorViewport() {
 
     const applyToolState = (tool: typeof activeTool) => {
       activeTool = tool;
-      if (isPlacementTool(tool) || tool === 'select') {
+      if (isPlacementTool(tool) || tool === 'select' || tool === 'brush') {
         controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
       } else {
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
