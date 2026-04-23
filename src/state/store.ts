@@ -75,6 +75,7 @@ type UiSlice = {
   showGrid: boolean;
   snapEnabled: boolean;
   sceneDirty: number;
+  ghostRotationY: number;
 };
 
 type UiActions = {
@@ -84,6 +85,7 @@ type UiActions = {
   toggleGrid: () => void;
   toggleSnap: () => void;
   markSceneDirty: () => void;
+  rotateGhost: () => void;
 };
 
 export type Store = SceneSlice & SceneActions & UiSlice & UiActions;
@@ -179,13 +181,15 @@ export const useStore = create<Store>((set, get) => ({
   showGrid: true,
   snapEnabled: true,
   sceneDirty: 0,
+  ghostRotationY: 0,
 
-  setActiveTool: (t) => set({ activeTool: t }),
+  setActiveTool: (t) => set({ activeTool: t, ghostRotationY: 0 }),
   setActiveRightTab: (t) => set({ activeRightTab: t }),
   togglePreview: () => set((s) => ({ previewVisible: !s.previewVisible })),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   markSceneDirty: () => set((s) => ({ sceneDirty: s.sceneDirty + 1 })),
+  rotateGhost: () => set((s) => ({ ghostRotationY: (s.ghostRotationY + 90) % 360 })),
 }));
 
 /** Generates a short unique id for primitives. */

@@ -76,11 +76,12 @@ export default function EditorViewport() {
       const key = gridCellKey(type, pos.x, pos.y, pos.z);
       if (recentCells.has(key)) return;
       recentCells.add(key);
+      const ry = useStore.getState().ghostRotationY;
       useStore.getState().addPrimitive({
         id: nextPrimitiveId(),
         type,
         position: pos,
-        rotation: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: ry, z: 0 },
         scale: { x: 1, y: 1, z: 1 },
       });
     };
@@ -89,6 +90,7 @@ export default function EditorViewport() {
       const pos = groundPlacement(type, x, z);
       const ghost = getOrCreateGhost(scene, type);
       ghost.position.set(pos.x, pos.y, pos.z);
+      ghost.rotation.y = (useStore.getState().ghostRotationY * Math.PI) / 180;
     };
 
     const paintedIds = new Set<string>();
@@ -260,6 +262,10 @@ export default function EditorViewport() {
       if (s.activeTool !== prev.activeTool) applyToolState(s.activeTool);
       if (s.selectedIds !== prev.selectedIds || s.primitives !== prev.primitives) {
         refreshGizmo();
+      }
+      if (s.ghostRotationY !== prev.ghostRotationY && isPlacementTool(activeTool)) {
+        const ghost = scene.getObjectByName('ghostPreview');
+        if (ghost) ghost.rotation.y = (s.ghostRotationY * Math.PI) / 180;
       }
     });
 
