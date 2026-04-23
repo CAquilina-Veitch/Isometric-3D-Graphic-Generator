@@ -20,7 +20,14 @@ import { beginTx, commitTx, record } from '../hooks/useHistory';
 import styles from './Viewport.module.css';
 
 const ZOOM_SCALE = 10;
-const PLACEMENT_TOOLS: PrimitiveType[] = ['cube', 'tile', 'stairs', 'slope'];
+const PLACEMENT_TOOLS: PrimitiveType[] = [
+  'cube',
+  'tile',
+  'stairs',
+  'slope',
+  'curve',
+  'curveHorizontal',
+];
 
 function isPlacementTool(t: string): t is PrimitiveType {
   return (PLACEMENT_TOOLS as string[]).includes(t);
@@ -266,19 +273,23 @@ export default function EditorViewport() {
       return true;
     };
 
-    const placeCutoutAt = (x: number, z: number) => {
+    const placeCutoutAt = (x: number, z: number): string | null => {
       const s = useStore.getState();
-      if (!s.activeCutoutImageId) return;
+      if (!s.activeCutoutImageId) return null;
+      const newId = `co-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
       record(() => {
         useStore.getState().addCutout({
-          id: `co-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+          id: newId,
           imageId: s.activeCutoutImageId!,
           position: { x: Math.round(x * 2) / 2, y: 1, z: Math.round(z * 2) / 2 },
           rotation: { x: 0, y: 0, z: 0 },
           scale: { x: 1, y: 1, z: 1 },
           facing: 'fixed',
+          outlineColor: null,
+          outlineThickness: 0.04,
         });
       });
+      return newId;
     };
 
     /** True if the click is landing on a visible transform-gizmo handle. */
@@ -337,7 +348,15 @@ export default function EditorViewport() {
         // Cutouts still place at the ground-hit x/z (they're billboards).
         const cx = h.onGround ? h.x : h.hitX;
         const cz = h.onGround ? h.z : h.hitZ;
-        placeCutoutAt(cx, cz);
+        const newId = placeCutoutAt(cx, cz);
+        if (newId) {
+          // One-shot placement: select the new cutout, switch to Select so
+          // the user can tune it via the Properties panel, and surface that tab.
+          const s = useStore.getState();
+          s.setSelection([newId]);
+          s.setActiveTool('select');
+          s.setActiveRightTab('properties');
+        }
         return;
       }
       if (isPlacementTool(activeTool)) {

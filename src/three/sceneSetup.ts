@@ -55,11 +55,13 @@ export function setGridVisible(visible: boolean) {
 export function applyLightState(state: {
   directionalIntensity: number;
   ambientIntensity: number;
+  ambientColor?: string;
   azimuthDeg: number;
   elevationDeg: number;
 }) {
   if (!ambientLight || !directionalLight) return;
   ambientLight.intensity = state.ambientIntensity;
+  ambientLight.color.set(state.ambientColor ?? '#ffffff');
   directionalLight.intensity = state.directionalIntensity;
   const az = (state.azimuthDeg * Math.PI) / 180;
   const el = (state.elevationDeg * Math.PI) / 180;

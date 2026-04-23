@@ -7,13 +7,21 @@ export type Tool =
   | 'tile'
   | 'stairs'
   | 'slope'
+  | 'curve'
+  | 'curveHorizontal'
   | 'brush'
   | 'erase'
   | 'cutout';
 
 export type RightTab = 'properties' | 'camera' | 'light' | 'render';
 
-export type PrimitiveType = 'cube' | 'tile' | 'stairs' | 'slope';
+export type PrimitiveType =
+  | 'cube'
+  | 'tile'
+  | 'stairs'
+  | 'slope'
+  | 'curve'
+  | 'curveHorizontal';
 
 export type Vec3 = { x: number; y: number; z: number };
 
@@ -26,6 +34,8 @@ export type Primitive = {
   materialId: string | null;
 };
 
+export type MaterialLighting = 'lit' | 'unlit' | 'emissive';
+
 export type Material = {
   id: string;
   name: string;
@@ -34,6 +44,10 @@ export type Material = {
   secondaryColor?: string;
   roughness: number;
   metalness: number;
+  /** How the material responds to scene lights. Defaults to 'lit'. */
+  lighting?: MaterialLighting;
+  /** Emissive strength when lighting === 'emissive'. Defaults to 1. */
+  emissiveStrength?: number;
 };
 
 export type CutoutImage = {
@@ -51,6 +65,10 @@ export type Cutout = {
   rotation: Vec3;
   scale: Vec3;
   facing: 'fixed' | 'billboard';
+  /** Outline halo color behind the cutout. Null = no outline. */
+  outlineColor?: string | null;
+  /** Outline thickness, normalized 0..0.25. Defaults to 0.04 (~paper thickness). */
+  outlineThickness?: number;
 };
 
 export type RenderCameraState = {
@@ -61,6 +79,7 @@ export type RenderCameraState = {
 export type LightState = {
   directionalIntensity: number;
   ambientIntensity: number;
+  ambientColor: string;
   azimuthDeg: number;
   elevationDeg: number;
   shadowSoftness: number;
@@ -187,6 +206,7 @@ const DEFAULT_RENDER_CAMERA: RenderCameraState = {
 const DEFAULT_LIGHT: LightState = {
   directionalIntensity: 1.1,
   ambientIntensity: 0.35,
+  ambientColor: '#ffffff',
   azimuthDeg: 40,
   elevationDeg: 55,
   shadowSoftness: 1.0,
@@ -472,7 +492,14 @@ export const useStore = create<Store>((set, get) => ({
   ghostRotationY: 0,
   helpOpen: false,
 
-  setActiveTool: (t) => set({ activeTool: t, ghostRotationY: 0 }),
+  setActiveTool: (t) =>
+    set((s) => ({
+      activeTool: t,
+      ghostRotationY: 0,
+      // Switching away from Select clears the selection so the gizmo goes away
+      // and placement/brush/erase don't feel tied to the previously-picked object.
+      selectedIds: t === 'select' ? s.selectedIds : [],
+    })),
   setActiveRightTab: (t) => set({ activeRightTab: t }),
   togglePreview: () => set((s) => ({ previewVisible: !s.previewVisible })),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),

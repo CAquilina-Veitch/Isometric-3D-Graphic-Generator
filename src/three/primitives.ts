@@ -2,11 +2,9 @@ import * as THREE from 'three';
 import type { Material, Primitive, PrimitiveType } from '../state/store';
 import { getTexture } from './textures';
 import {
-  BEVEL_SIZE,
   adaptiveKey,
   computeCoveredFaces,
   createAdaptiveBoxGeometry,
-  edgeBevelMask,
 } from './adaptiveGeometry';
 
 export type GeometryResult = {
@@ -37,7 +35,6 @@ export function buildGeometry(
 ): GeometryResult {
   if (p.type === 'cube' || p.type === 'tile') {
     const covered = computeCoveredFaces(allPrimitives).get(p.id) ?? new Set();
-    const bevelMask = edgeBevelMask(covered);
     const half = p.type === 'cube'
       ? { x: 0.5, y: 0.5, z: 0.5 }
       : { x: 0.5, y: 0.125, z: 0.5 };
@@ -46,10 +43,8 @@ export function buildGeometry(
       half.y * p.scale.y,
       half.z * p.scale.z,
       covered,
-      bevelMask,
-      BEVEL_SIZE,
     );
-    return { geometry, adaptiveKey: adaptiveKey(covered, bevelMask) };
+    return { geometry, adaptiveKey: adaptiveKey(covered) };
   }
   return {
     geometry: createSimpleGeometry(p.type),
@@ -57,7 +52,9 @@ export function buildGeometry(
   };
 }
 
-export function createThreeMaterial(material: Material | null): THREE.MeshStandardMaterial {
+export function createThreeMaterial(
+  material: Material | null,
+): THREE.MeshStandardMaterial | THREE.MeshBasicMaterial {
   if (!material) {
     return new THREE.MeshStandardMaterial({
       color: 0x808080,
@@ -70,12 +67,27 @@ export function createThreeMaterial(material: Material | null): THREE.MeshStanda
     color: material.color,
     secondaryColor: material.secondaryColor,
   });
-  return new THREE.MeshStandardMaterial({
+  const lighting = material.lighting ?? 'lit';
+  if (lighting === 'unlit') {
+    // Flat shading — ignores lights. MeshBasicMaterial's map is multiplied by color,
+    // so we still get color+texture, just no lighting.
+    return new THREE.MeshBasicMaterial({
+      color: new THREE.Color(material.color),
+      map,
+    });
+  }
+  const mat = new THREE.MeshStandardMaterial({
     color: new THREE.Color(material.color),
     map,
     roughness: material.roughness,
     metalness: material.metalness,
   });
+  if (lighting === 'emissive') {
+    mat.emissive.set(material.color);
+    mat.emissiveIntensity = material.emissiveStrength ?? 1;
+    mat.emissiveMap = map;
+  }
+  return mat;
 }
 
 function createSimpleGeometry(type: PrimitiveType): THREE.BufferGeometry {
@@ -88,6 +100,10 @@ function createSimpleGeometry(type: PrimitiveType): THREE.BufferGeometry {
       return createStairsGeometry();
     case 'slope':
       return createSlopeGeometry();
+    case 'curve':
+      return createCurveGeometry();
+    case 'curveHorizontal':
+      return createCurveHorizontalGeometry();
   }
 }
 
@@ -121,6 +137,65 @@ function createStairsGeometry(): THREE.BufferGeometry {
   return mergeBoxes(geometries);
 }
 
+/**
+ * Vertical quarter-pie extruded to 1×1×1 bounds. Pie tip sits at the
+ * primitive's (+X, +Z) corner; the arc of radius 1 sweeps from (+X, -Z) to
+ * (-X, +Z) through the (-X, -Z) region. Rotating four copies 90° and tiling
+ * them 2×2 so the pie tips all meet at the shared inner corner composes a
+ * complete cylinder of diameter 2 with its axis along +Y.
+ */
+function createCurveGeometry(): THREE.BufferGeometry {
+  return buildQuarterPieExtrusion('vertical');
+}
+
+/**
+ * Horizontal quarter-pie: same pie cross-section but extruded along +Z so the
+ * cylinder axis is horizontal. Four of them tiled 2×2 in the X/Y plane form a
+ * horizontal cylinder along +Z. Useful for curved floor-to-wall fillets and
+ * half-pipes.
+ */
+function createCurveHorizontalGeometry(): THREE.BufferGeometry {
+  return buildQuarterPieExtrusion('horizontal');
+}
+
+function buildQuarterPieExtrusion(
+  orientation: 'vertical' | 'horizontal',
+): THREE.BufferGeometry {
+  // 2D shape, authored CCW so ExtrudeGeometry's front faces stay outward after
+  // we rotate. Pie tip at (0.5, -0.5) in 2D; arc of radius 1 sweeps from
+  // (0.5, 0.5) down to (-0.5, -0.5). Traversing tip → (0.5, 0.5) → arc →
+  // (-0.5, -0.5) → tip keeps the filled interior on the traversal's left.
+  const shape = new THREE.Shape();
+  shape.moveTo(0.5, -0.5);
+  shape.lineTo(0.5, 0.5);
+  shape.absarc(0.5, -0.5, 1, Math.PI / 2, Math.PI, false);
+  shape.lineTo(0.5, -0.5);
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: 1,
+    bevelEnabled: false,
+    curveSegments: 24,
+  });
+  // ExtrudeGeometry native orientation: shape lives in XY, extrusion runs +Z.
+  // Normals/winding are already correct for the CCW shape — we only rotate
+  // (no scales-by-negative) so the normal matrix stays identity-like.
+  if (orientation === 'vertical') {
+    // Swing the shape up into XZ and turn the extrusion into +Y. rotateX(-π/2)
+    // maps (x, y, z) → (x, z, -y). Shape's Y axis (which held the pie's
+    // +Y direction) becomes the primitive's -Z, so the tip at 2D (0.5, -0.5)
+    // ends up at primitive (0.5, y, 0.5) — our desired (+X, +Z) corner.
+    geometry.rotateX(-Math.PI / 2);
+    // Extrusion went from Y=0 to Y=1; shift down to center on Y=0.
+    geometry.translate(0, -0.5, 0);
+  } else {
+    // Shape already in XY; extrusion along +Z is exactly what we want. The
+    // cross-section sits upright (quarter-pie in XY) and the piece is 1 unit
+    // long along Z. Shift Z to center.
+    geometry.translate(0, 0, -0.5);
+  }
+  return geometry;
+}
+
 function createSlopeGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const v = new Float32Array([
@@ -131,20 +206,28 @@ function createSlopeGeometry(): THREE.BufferGeometry {
     -0.5,  0.5,  0.5,
      0.5,  0.5,  0.5,
   ]);
+  // Triangle order is CCW from outside in Three.js's right-handed coords so
+  // the computed normals point outward and front-face culling renders them.
   const index = [
-    0, 2, 1,
-    0, 3, 2,
-    3, 4, 5,
-    3, 5, 2,
-    0, 1, 4,
-    1, 5, 4,
-    0, 4, 3,
-    1, 2, 5,
+    0, 1, 2,
+    0, 2, 3,
+    3, 5, 4,
+    3, 2, 5,
+    0, 4, 1,
+    1, 4, 5,
+    0, 3, 4,
+    1, 5, 2,
   ];
   g.setAttribute('position', new THREE.BufferAttribute(v, 3));
   g.setIndex(index);
-  g.computeVertexNormals();
-  return g;
+  // Un-index before computing normals so each triangle owns its vertex copies.
+  // With shared vertices, computeVertexNormals averages across adjacent faces
+  // and the slope gets smeared shading at every corner; we want crisp per-face
+  // flat shading.
+  const nonIndexed = g.toNonIndexed();
+  nonIndexed.computeVertexNormals();
+  g.dispose();
+  return nonIndexed;
 }
 
 function mergeBoxes(boxes: THREE.BoxGeometry[]): THREE.BufferGeometry {

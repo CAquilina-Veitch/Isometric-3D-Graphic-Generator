@@ -135,12 +135,38 @@ function BoundCutout({ cutout }: { cutout: Cutout }) {
         onCommit={(axis, v) => commitAxis('position', axis, v)}
         step={0.25}
       />
-      <Vec3Field
-        label="Rotation"
-        value={cutout.rotation}
-        onCommit={(axis, v) => commitAxis('rotation', axis, v)}
-        step={15}
-      />
+
+      <div className={styles.field}>
+        <label className={styles.fieldLabel}>Tilt X</label>
+        <input
+          type="range"
+          min={-90}
+          max={90}
+          step={1}
+          value={cutout.rotation.x}
+          onChange={(e) => commitAxis('rotation', 'x', parseFloat(e.target.value))}
+          style={{ flex: 1, accentColor: 'var(--accent)' }}
+        />
+        <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', width: 36, textAlign: 'right' }}>
+          {cutout.rotation.x.toFixed(0)}°
+        </span>
+      </div>
+      <div className={styles.field}>
+        <label className={styles.fieldLabel}>Yaw Y</label>
+        <input
+          type="range"
+          min={0}
+          max={360}
+          step={1}
+          value={((cutout.rotation.y % 360) + 360) % 360}
+          onChange={(e) => commitAxis('rotation', 'y', parseFloat(e.target.value))}
+          style={{ flex: 1, accentColor: 'var(--accent)' }}
+        />
+        <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', width: 36, textAlign: 'right' }}>
+          {(((cutout.rotation.y % 360) + 360) % 360).toFixed(0)}°
+        </span>
+      </div>
+
       <Vec3Field
         label="Scale"
         value={cutout.scale}
@@ -165,6 +191,55 @@ function BoundCutout({ cutout }: { cutout: Cutout }) {
           Billboard
         </button>
       </div>
+
+      <div className={styles.sectionTitle} style={{ marginTop: 14 }}>
+        Paper outline
+      </div>
+      <div className={styles.field}>
+        <label className={styles.fieldLabel} style={{ width: 62 }}>Enabled</label>
+        <input
+          type="checkbox"
+          checked={cutout.outlineColor != null}
+          onChange={(e) =>
+            updateCutout(cutout.id, {
+              outlineColor: e.target.checked ? (cutout.outlineColor ?? '#ffffff') : null,
+            })
+          }
+        />
+      </div>
+      {cutout.outlineColor != null && (
+        <>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel}>Color</label>
+            <input
+              type="color"
+              value={cutout.outlineColor}
+              onChange={(e) => updateCutout(cutout.id, { outlineColor: e.target.value })}
+              style={{ width: 28, height: 22, padding: 0, borderRadius: 4, border: '1px solid var(--border-strong)', background: 'transparent' }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', flex: 1 }}>
+              {cutout.outlineColor}
+            </span>
+          </div>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel}>Thickness</label>
+            <input
+              type="range"
+              min={0.01}
+              max={0.2}
+              step={0.005}
+              value={cutout.outlineThickness ?? 0.04}
+              onChange={(e) =>
+                updateCutout(cutout.id, { outlineThickness: parseFloat(e.target.value) })
+              }
+              style={{ flex: 1 }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', width: 36 }}>
+              {(cutout.outlineThickness ?? 0.04).toFixed(2)}
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useStore, type Material } from '../state/store';
+import { useStore, type Material, type MaterialLighting } from '../state/store';
 import { processImageFile } from '../three/billboards';
 import type { TextureKind } from '../three/textures';
 import styles from './MaterialsPanel.module.css';
@@ -120,6 +120,9 @@ function MaterialRow({
     updateMaterial(material.id, { roughness });
   const onMetalnessChange = (metalness: number) =>
     updateMaterial(material.id, { metalness });
+  const onLightingChange = (lighting: MaterialLighting) =>
+    updateMaterial(material.id, { lighting });
+  const lighting = material.lighting ?? 'lit';
 
   return (
     <div className={styles.row} data-active={active} data-editing={editing}>
@@ -202,33 +205,53 @@ function MaterialRow({
             </label>
           )}
 
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Rough</span>
-            <input
-              className={styles.slider}
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={material.roughness}
-              onChange={(e) => onRoughnessChange(parseFloat(e.target.value))}
-            />
-            <span className={styles.sliderValue}>{material.roughness.toFixed(2)}</span>
-          </label>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>Light</span>
+            <div className={styles.segmented}>
+              {(['lit', 'unlit', 'emissive'] as MaterialLighting[]).map((mode) => (
+                <button
+                  key={mode}
+                  className={styles.segment}
+                  data-active={lighting === mode}
+                  onClick={() => onLightingChange(mode)}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Metal</span>
-            <input
-              className={styles.slider}
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={material.metalness}
-              onChange={(e) => onMetalnessChange(parseFloat(e.target.value))}
-            />
-            <span className={styles.sliderValue}>{material.metalness.toFixed(2)}</span>
-          </label>
+          {lighting !== 'unlit' && (
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Rough</span>
+              <input
+                className={styles.slider}
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={material.roughness}
+                onChange={(e) => onRoughnessChange(parseFloat(e.target.value))}
+              />
+              <span className={styles.sliderValue}>{material.roughness.toFixed(2)}</span>
+            </label>
+          )}
+
+          {lighting !== 'unlit' && (
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Metal</span>
+              <input
+                className={styles.slider}
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={material.metalness}
+                onChange={(e) => onMetalnessChange(parseFloat(e.target.value))}
+              />
+              <span className={styles.sliderValue}>{material.metalness.toFixed(2)}</span>
+            </label>
+          )}
 
           <div className={styles.editorActions}>
             <button className={styles.dangerButton} onClick={() => removeMaterial(material.id)}>

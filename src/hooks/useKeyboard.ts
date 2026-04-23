@@ -2,7 +2,14 @@ import { useEffect } from 'react';
 import { useStore, type Tool } from '../state/store';
 import { record, undo, redo } from './useHistory';
 
-const PLACEMENT_TOOLS: Tool[] = ['cube', 'tile', 'stairs', 'slope'];
+const PLACEMENT_TOOLS: Tool[] = [
+  'cube',
+  'tile',
+  'stairs',
+  'slope',
+  'curve',
+  'curveHorizontal',
+];
 
 function isEditingInput(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -53,6 +60,12 @@ export function useKeyboard() {
           return;
         case '4':
           s.setActiveTool('slope');
+          return;
+        case '5':
+          s.setActiveTool('curve');
+          return;
+        case '6':
+          s.setActiveTool('curveHorizontal');
           return;
         case 'b':
           s.setActiveTool('brush');

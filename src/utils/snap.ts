@@ -5,6 +5,8 @@ export const GRID_STEP: Record<PrimitiveType, { xz: number; y: number }> = {
   tile: { xz: 1.0, y: 0.25 },
   stairs: { xz: 1.0, y: 1.0 },
   slope: { xz: 1.0, y: 1.0 },
+  curve: { xz: 1.0, y: 1.0 },
+  curveHorizontal: { xz: 1.0, y: 1.0 },
 };
 
 export function snapToGrid(
@@ -37,6 +39,8 @@ export function groundCenterY(type: PrimitiveType): number {
       return 0.125; // 0.25 thick
     case 'stairs':
     case 'slope':
+    case 'curve':
+    case 'curveHorizontal':
       return 0.5;
   }
 }

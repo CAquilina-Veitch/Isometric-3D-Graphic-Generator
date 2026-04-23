@@ -51,6 +51,18 @@ export default function LightTab() {
         value={state.ambientIntensity}
         onChange={(v) => update({ ambientIntensity: v })}
       />
+      <div className={styles.field}>
+        <label className={styles.fieldLabel}>Color</label>
+        <input
+          type="color"
+          value={state.ambientColor ?? '#ffffff'}
+          onChange={(e) => update({ ambientColor: e.target.value })}
+          style={{ width: 28, height: 22, padding: 0, borderRadius: 4, border: '1px solid var(--border-strong)', background: 'transparent' }}
+        />
+        <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', flex: 1 }}>
+          {state.ambientColor ?? '#ffffff'}
+        </span>
+      </div>
     </div>
   );
 }

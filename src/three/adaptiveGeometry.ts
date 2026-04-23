@@ -2,18 +2,20 @@ import * as THREE from 'three';
 import type { Primitive, PrimitiveType } from '../state/store';
 
 /**
- * Adaptive geometry for axis-aligned cubes and tiles:
- *   - Detects face-plane coincidence with neighbouring primitives.
- *   - Covered faces are hidden; edges where both adjacent faces are exposed
- *     get a small bevel; edges where either face is covered stay sharp.
+ * Face-aware box geometry for cubes and tiles:
+ *   - Detects which faces are fully covered by a neighboring primitive.
+ *   - Emits only the exposed faces as sharp axis-aligned quads.
  *
- * Face indices:        0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z
- * Corner indices:      0..7, each at a ± combination (see CORNER_COORDS).
- * Edge indices 0..11:  see EDGE_ENDPOINTS / EDGE_ADJACENT_FACES below.
+ * Face indices: 0 +X, 1 -X, 2 +Y, 3 -Y, 4 +Z, 5 -Z.
+ *
+ * No bevels, no chamfer strips, no corner fillets — every edge is sharp. The
+ * adaptive bevel approach we tried earlier created unavoidable artifacts at
+ * mixed-size junctions (e.g. tile against cube), so we removed it entirely.
  */
 
-export const BEVEL_SIZE = 0.055;
 const EPS = 1e-4;
+
+type FaceId = 0 | 1 | 2 | 3 | 4 | 5;
 
 export type AdaptiveType = 'cube' | 'tile';
 
@@ -29,29 +31,32 @@ const BASE_HALF: Record<AdaptiveType, { x: number; y: number; z: number }> = {
   tile: { x: 0.5, y: 0.125, z: 0.5 },
 };
 
-type FaceId = 0 | 1 | 2 | 3 | 4 | 5;
-
-/** Signed-axis unit vectors matching face indices. */
+/** Outward-pointing unit normal per face. */
 const FACE_NORMAL: Record<FaceId, [number, number, number]> = {
-  0: [1, 0, 0],
-  1: [-1, 0, 0],
-  2: [0, 1, 0],
-  3: [0, -1, 0],
-  4: [0, 0, 1],
-  5: [0, 0, -1],
+  0: [1, 0, 0],   // +X
+  1: [-1, 0, 0],  // -X
+  2: [0, 1, 0],   // +Y
+  3: [0, -1, 0],  // -Y
+  4: [0, 0, 1],   // +Z
+  5: [0, 0, -1],  // -Z
 };
 
-/** For each face, its 4 edge indices (one per boundary edge, CCW around the outward normal). */
-const FACE_EDGES: Record<FaceId, [number, number, number, number]> = {
-  0: [9, 7, 11, 5], // +X
-  1: [4, 6, 10, 8], // -X
-  2: [1, 3, 10, 11], // +Y
-  3: [0, 2, 8, 9], // -Y
-  4: [2, 3, 6, 7], // +Z
-  5: [0, 1, 4, 5], // -Z
+/**
+ * Face corners in CCW order as seen from OUTSIDE the cube in Three.js's
+ * right-handed coordinate system. Each tuple indexes into CORNER_COORDS.
+ * Verified so the cross product of the first three vertices points outward
+ * along the face's normal (so Three.js front-face culling behaves correctly).
+ */
+const FACE_CORNERS: Record<FaceId, [number, number, number, number]> = {
+  0: [2, 6, 5, 1], // +X
+  1: [4, 7, 3, 0], // -X
+  2: [7, 6, 2, 3], // +Y
+  3: [1, 5, 4, 0], // -Y
+  4: [5, 6, 7, 4], // +Z
+  5: [3, 2, 1, 0], // -Z
 };
 
-/** Corner ± pattern: index → (signX, signY, signZ). */
+/** Corner sign pattern: index → (signX, signY, signZ). */
 const CORNER_COORDS: [number, number, number][] = [
   [-1, -1, -1],
   [1, -1, -1],
@@ -62,41 +67,6 @@ const CORNER_COORDS: [number, number, number][] = [
   [1, 1, 1],
   [-1, 1, 1],
 ];
-
-/** Edge → [cornerA, cornerB]. */
-const EDGE_ENDPOINTS: [number, number][] = [
-  [0, 1], // 0
-  [2, 3], // 1
-  [4, 5], // 2
-  [6, 7], // 3
-  [0, 3], // 4
-  [1, 2], // 5
-  [4, 7], // 6
-  [5, 6], // 7
-  [0, 4], // 8
-  [1, 5], // 9
-  [3, 7], // 10
-  [2, 6], // 11
-];
-
-/** Edge → the two faces that share it. */
-const EDGE_ADJACENT_FACES: [FaceId, FaceId][] = [
-  [3, 5], // 0
-  [2, 5], // 1
-  [3, 4], // 2
-  [2, 4], // 3
-  [1, 5], // 4
-  [0, 5], // 5
-  [1, 4], // 6
-  [0, 4], // 7
-  [1, 3], // 8
-  [0, 3], // 9
-  [1, 2], // 10
-  [0, 2], // 11
-];
-
-/** Edge → the axis it runs along (0=X, 1=Y, 2=Z). */
-const EDGE_AXIS: (0 | 1 | 2)[] = [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2];
 
 /** World-space AABB + axis-aligned half extents for an adaptive primitive. */
 type PrimBox = {
@@ -129,8 +99,15 @@ function approx(a: number, b: number): boolean {
   return Math.abs(a - b) < EPS;
 }
 
-/** Returns a record keyed by primitive id → 6-bit mask of covered face indices. */
-export function computeCoveredFaces(primitives: Primitive[]): Map<string, Set<FaceId>> {
+/**
+ * Returns a map of primitive id → set of covered face indices. A face is
+ * "covered" iff an adjacent primitive's perpendicular rectangle fully contains
+ * it on both perpendicular axes. Partial overlaps don't count — a small tile
+ * shouldn't cover a cube's larger face (we'd leave a visible hole).
+ */
+export function computeCoveredFaces(
+  primitives: Primitive[],
+): Map<string, Set<FaceId>> {
   const boxes: PrimBox[] = [];
   for (const p of primitives) {
     const b = getBox(p);
@@ -156,47 +133,38 @@ function checkAxis(
   b: PrimBox,
   covered: Map<string, Set<FaceId>>,
   axis: 'x' | 'y' | 'z',
-  posFace: FaceId, // face on +axis
-  negFace: FaceId, // face on -axis
+  posFace: FaceId,
+  negFace: FaceId,
 ) {
   const ac = axis === 'x' ? a.cx : axis === 'y' ? a.cy : a.cz;
   const bc = axis === 'x' ? b.cx : axis === 'y' ? b.cy : b.cz;
   const ah = axis === 'x' ? a.hx : axis === 'y' ? a.hy : a.hz;
   const bh = axis === 'x' ? b.hx : axis === 'y' ? b.hy : b.hz;
 
-  // A's +axis face at ac+ah; B's -axis face at bc-bh
-  if (approx(ac + ah, bc - bh) && rectOverlap(a, b, axis)) {
-    covered.get(a.id)!.add(posFace);
-    covered.get(b.id)!.add(negFace);
+  if (approx(ac + ah, bc - bh)) {
+    if (rectContains(b, a, axis)) covered.get(a.id)!.add(posFace);
+    if (rectContains(a, b, axis)) covered.get(b.id)!.add(negFace);
   }
-  if (approx(ac - ah, bc + bh) && rectOverlap(a, b, axis)) {
-    covered.get(a.id)!.add(negFace);
-    covered.get(b.id)!.add(posFace);
+  if (approx(ac - ah, bc + bh)) {
+    if (rectContains(b, a, axis)) covered.get(a.id)!.add(negFace);
+    if (rectContains(a, b, axis)) covered.get(b.id)!.add(posFace);
   }
 }
 
-/** Returns true if boxes overlap on the two axes other than `axis`. */
-function rectOverlap(a: PrimBox, b: PrimBox, axis: 'x' | 'y' | 'z'): boolean {
+function rectContains(
+  outer: PrimBox,
+  inner: PrimBox,
+  axis: 'x' | 'y' | 'z',
+): boolean {
   const checks: [number, number, number, number][] = [];
-  if (axis !== 'x') checks.push([a.cx, a.hx, b.cx, b.hx]);
-  if (axis !== 'y') checks.push([a.cy, a.hy, b.cy, b.hy]);
-  if (axis !== 'z') checks.push([a.cz, a.hz, b.cz, b.hz]);
-  for (const [ac, ah, bc, bh] of checks) {
-    const lo = Math.max(ac - ah, bc - bh);
-    const hi = Math.min(ac + ah, bc + bh);
-    if (hi - lo <= EPS) return false;
+  if (axis !== 'x') checks.push([outer.cx, outer.hx, inner.cx, inner.hx]);
+  if (axis !== 'y') checks.push([outer.cy, outer.hy, inner.cy, inner.hy]);
+  if (axis !== 'z') checks.push([outer.cz, outer.hz, inner.cz, inner.hz]);
+  for (const [oc, oh, ic, ih] of checks) {
+    if (oc - oh > ic - ih + EPS) return false;
+    if (oc + oh < ic + ih - EPS) return false;
   }
   return true;
-}
-
-/** Returns a 12-bit mask; bit i = edge i bevelled. */
-export function edgeBevelMask(covered: Set<FaceId>): number {
-  let mask = 0;
-  for (let e = 0; e < 12; e++) {
-    const [fa, fb] = EDGE_ADJACENT_FACES[e];
-    if (!covered.has(fa) && !covered.has(fb)) mask |= 1 << e;
-  }
-  return mask;
 }
 
 /** 6-bit mask → Set for convenience. */
@@ -206,81 +174,32 @@ export function coveredSet(mask: number): Set<FaceId> {
   return out;
 }
 
-/** Pack covered + bevels into one key so we can detect changes cheaply. */
-export function adaptiveKey(covered: Set<FaceId>, bevelMask: number): string {
-  let coverMask = 0;
-  covered.forEach((f) => (coverMask |= 1 << f));
-  return `${coverMask}|${bevelMask}`;
+/** Stable identity for a covered-face set so reconcilers can detect changes. */
+export function adaptiveKey(covered: Set<FaceId>): string {
+  let mask = 0;
+  covered.forEach((f) => (mask |= 1 << f));
+  return String(mask);
 }
 
 /**
- * Builds an axis-aligned box with per-edge bevels and per-face hiding.
- *
- * Geometry: 3 face-corner positions are computed per cube corner (one for each
- * of its 3 adjacent faces). A face's polygon uses the 4 face-corners at its
- * boundary. Each bevelled edge emits a chamfer strip connecting 2 face-corners
- * at each end. When all 3 edges meeting at a cube corner are bevelled, emit a
- * triangular fillet that closes the opening.
+ * Builds an axis-aligned box with all covered faces omitted. Sharp edges,
+ * no bevels — predictable geometry that behaves well at every adjacency.
  */
 export function createAdaptiveBoxGeometry(
   halfX: number,
   halfY: number,
   halfZ: number,
   covered: Set<FaceId>,
-  bevelMask: number,
-  bevel = BEVEL_SIZE,
 ): THREE.BufferGeometry {
-  const b = Math.min(bevel, halfX * 0.45, halfY * 0.45, halfZ * 0.45);
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
 
-  /** For each (corner 0..7, face 0..5), the face-corner position. -1 if not adjacent. */
-  const faceCornerPos: (readonly [number, number, number] | null)[][] = Array.from(
-    { length: 8 },
-    () => Array(6).fill(null),
-  );
-  for (let c = 0; c < 8; c++) {
+  const cornerPos = (c: number): readonly [number, number, number] => {
     const [sx, sy, sz] = CORNER_COORDS[c];
-    const base = [sx * halfX, sy * halfY, sz * halfZ] as const;
-    for (let f = 0; f < 6; f++) {
-      const faceId = f as FaceId;
-      const [nx, ny, nz] = FACE_NORMAL[faceId];
-      // Is this corner on this face?
-      if (nx !== 0 && Math.sign(nx) !== sx) continue;
-      if (ny !== 0 && Math.sign(ny) !== sy) continue;
-      if (nz !== 0 && Math.sign(nz) !== sz) continue;
-      // Find the 2 edges at this corner that belong to this face.
-      const faceEdges = FACE_EDGES[faceId];
-      const edgesAtCorner: number[] = [];
-      for (const e of faceEdges) {
-        const [ca, cb] = EDGE_ENDPOINTS[e];
-        if (ca === c || cb === c) edgesAtCorner.push(e);
-      }
-      // Position = base, inset by b along each bevelled edge axis toward center.
-      let x = base[0];
-      let y = base[1];
-      let z = base[2];
-      for (const e of edgesAtCorner) {
-        if (!(bevelMask & (1 << e))) continue;
-        // The bevel should terminate cleanly at a covered-face boundary.
-        // At corner c, the "third face" perpendicular to edge e is the face at c
-        // whose normal axis matches e's axis. If that face is covered, the edge
-        // is continuous across a shared boundary — no inset here.
-        const axis = EDGE_AXIS[e];
-        const sign = axis === 0 ? sx : axis === 1 ? sy : sz;
-        const thirdFaceId = (axis * 2 + (sign === 1 ? 0 : 1)) as FaceId;
-        if (covered.has(thirdFaceId)) continue;
-        // Inset in the direction OPPOSITE the corner sign on the edge's axis.
-        if (axis === 0) x -= sx * b;
-        else if (axis === 1) y -= sy * b;
-        else z -= sz * b;
-      }
-      faceCornerPos[c][f] = [x, y, z];
-    }
-  }
+    return [sx * halfX, sy * halfY, sz * halfZ];
+  };
 
-  // Emit face polygons (as two triangles each) for exposed faces.
   const emitTri = (
     pa: readonly [number, number, number],
     pb: readonly [number, number, number],
@@ -292,145 +211,17 @@ export function createAdaptiveBoxGeometry(
     uvs.push(0, 0, 1, 0, 1, 1);
   };
 
-  // Each face's corners, CCW as seen from outside the cube in Three.js's
-  // right-handed coordinate system (so the cross product of the first three
-  // vertices points outward along the face normal).
-  const FACE_CORNERS: Record<FaceId, [number, number, number, number]> = {
-    0: [2, 6, 5, 1], // +X
-    1: [4, 7, 3, 0], // -X
-    2: [7, 6, 2, 3], // +Y
-    3: [1, 5, 4, 0], // -Y
-    4: [5, 6, 7, 4], // +Z
-    5: [3, 2, 1, 0], // -Z
-  };
-
   for (let f = 0; f < 6; f++) {
     const faceId = f as FaceId;
     if (covered.has(faceId)) continue;
     const normal = FACE_NORMAL[faceId];
     const [c0, c1, c2, c3] = FACE_CORNERS[faceId];
-    const p0 = faceCornerPos[c0][faceId];
-    const p1 = faceCornerPos[c1][faceId];
-    const p2 = faceCornerPos[c2][faceId];
-    const p3 = faceCornerPos[c3][faceId];
-    if (!p0 || !p1 || !p2 || !p3) continue;
+    const p0 = cornerPos(c0);
+    const p1 = cornerPos(c1);
+    const p2 = cornerPos(c2);
+    const p3 = cornerPos(c3);
     emitTri(p0, p1, p2, normal);
     emitTri(p0, p2, p3, normal);
-  }
-
-  // Each bevelled edge: emit a chamfer strip. Winding is not assumed — each
-  // triangle flips itself if needed so its normal agrees with the expected
-  // outward direction (average of the two adjacent face normals). This is
-  // robust to EDGE_ENDPOINTS / EDGE_ADJACENT_FACES orientation inconsistencies
-  // and to the tapered/degenerate quads that happen at shared edges.
-  const emitOrientedTri = (
-    p0: readonly [number, number, number],
-    p1: readonly [number, number, number],
-    p2: readonly [number, number, number],
-    outward: readonly [number, number, number],
-  ) => {
-    const ux = p1[0] - p0[0];
-    const uy = p1[1] - p0[1];
-    const uz = p1[2] - p0[2];
-    const vx = p2[0] - p0[0];
-    const vy = p2[1] - p0[1];
-    const vz = p2[2] - p0[2];
-    const nx = uy * vz - uz * vy;
-    const ny = uz * vx - ux * vz;
-    const nz = ux * vy - uy * vx;
-    const len = Math.hypot(nx, ny, nz);
-    if (len < 1e-9) return; // degenerate — skip
-    const inx = nx / len;
-    const iny = ny / len;
-    const inz = nz / len;
-    const dot = inx * outward[0] + iny * outward[1] + inz * outward[2];
-    if (dot >= 0) {
-      emitTri(p0, p1, p2, [inx, iny, inz]);
-    } else {
-      emitTri(p0, p2, p1, [-inx, -iny, -inz]);
-    }
-  };
-
-  for (let e = 0; e < 12; e++) {
-    if (!(bevelMask & (1 << e))) continue;
-    const [ca, cb] = EDGE_ENDPOINTS[e];
-    const [fa, fb] = EDGE_ADJACENT_FACES[e];
-    // Skip strip if either face is covered — it's "inside" geometry.
-    if (covered.has(fa) || covered.has(fb)) continue;
-    const aFa = faceCornerPos[ca][fa];
-    const aFb = faceCornerPos[ca][fb];
-    const bFa = faceCornerPos[cb][fa];
-    const bFb = faceCornerPos[cb][fb];
-    if (!aFa || !aFb || !bFa || !bFb) continue;
-    const nA = FACE_NORMAL[fa];
-    const nB = FACE_NORMAL[fb];
-    const ox = nA[0] + nB[0];
-    const oy = nA[1] + nB[1];
-    const oz = nA[2] + nB[2];
-    const olen = Math.hypot(ox, oy, oz) || 1;
-    const outward: [number, number, number] = [ox / olen, oy / olen, oz / olen];
-    // Triangulate as two tris across the (aFa, bFa, bFb, aFb) quad.
-    // Winding is fixed up per-triangle by emitOrientedTri.
-    emitOrientedTri(aFa, bFa, bFb, outward);
-    emitOrientedTri(aFa, bFb, aFb, outward);
-  }
-
-  // Corner fillets: where all 3 adjacent edges at a corner are bevelled and none of
-  // the 3 adjacent faces are covered, emit a triangle between the 3 face-corners.
-  const CORNER_EDGES: [number, number, number][] = [
-    [0, 4, 8],  // corner 0: edges 0, 4, 8
-    [0, 5, 9],  // 1
-    [1, 5, 11], // 2
-    [1, 4, 10], // 3
-    [2, 6, 8],  // 4
-    [2, 7, 9],  // 5
-    [3, 7, 11], // 6
-    [3, 6, 10], // 7
-  ];
-  const CORNER_FACES: [FaceId, FaceId, FaceId][] = [
-    [1, 3, 5],
-    [0, 3, 5],
-    [0, 2, 5],
-    [1, 2, 5],
-    [1, 3, 4],
-    [0, 3, 4],
-    [0, 2, 4],
-    [1, 2, 4],
-  ];
-
-  for (let c = 0; c < 8; c++) {
-    const [e1, e2, e3] = CORNER_EDGES[c];
-    const allBev =
-      bevelMask & (1 << e1) && bevelMask & (1 << e2) && bevelMask & (1 << e3);
-    if (!allBev) continue;
-    const [fa, fb, fc] = CORNER_FACES[c];
-    if (covered.has(fa) || covered.has(fb) || covered.has(fc)) continue;
-    const pa = faceCornerPos[c][fa];
-    const pb = faceCornerPos[c][fb];
-    const pc = faceCornerPos[c][fc];
-    if (!pa || !pb || !pc) continue;
-    // Orient outward via the corner's sign vector.
-    const [sx, sy, sz] = CORNER_COORDS[c];
-    const normal: [number, number, number] = [sx, sy, sz];
-    const len = Math.hypot(normal[0], normal[1], normal[2]) || 1;
-    normal[0] /= len; normal[1] /= len; normal[2] /= len;
-    // Pick winding that matches outward normal.
-    const centroid: [number, number, number] = [
-      (pa[0] + pb[0] + pc[0]) / 3,
-      (pa[1] + pb[1] + pc[1]) / 3,
-      (pa[2] + pb[2] + pc[2]) / 3,
-    ];
-    const u: [number, number, number] = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
-    const v: [number, number, number] = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
-    const cross: [number, number, number] = [
-      u[1] * v[2] - u[2] * v[1],
-      u[2] * v[0] - u[0] * v[2],
-      u[0] * v[1] - u[1] * v[0],
-    ];
-    const dot = cross[0] * normal[0] + cross[1] * normal[1] + cross[2] * normal[2];
-    if (dot >= 0) emitTri(pa, pb, pc, normal);
-    else emitTri(pa, pc, pb, normal);
-    void centroid;
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -443,22 +234,20 @@ export function createAdaptiveBoxGeometry(
   return geometry;
 }
 
-/** Convenience: compute covered + bevel flags + return geometry for one primitive. */
+/** Convenience: compute covered faces + return geometry for one primitive. */
 export function buildAdaptiveGeometryFor(
   primitive: Primitive,
   allPrimitives: Primitive[],
-): { geometry: THREE.BufferGeometry; covered: Set<FaceId>; bevelMask: number } | null {
+): { geometry: THREE.BufferGeometry; covered: Set<FaceId> } | null {
   if (!isAdaptive(primitive)) return null;
   const coveredMap = computeCoveredFaces(allPrimitives);
   const covered = coveredMap.get(primitive.id) ?? new Set<FaceId>();
-  const bevelMask = edgeBevelMask(covered);
   const base = BASE_HALF[primitive.type];
   const geometry = createAdaptiveBoxGeometry(
     base.x * primitive.scale.x,
     base.y * primitive.scale.y,
     base.z * primitive.scale.z,
     covered,
-    bevelMask,
   );
-  return { geometry, covered, bevelMask };
+  return { geometry, covered };
 }

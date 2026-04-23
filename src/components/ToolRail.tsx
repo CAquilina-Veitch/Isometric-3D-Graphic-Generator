@@ -1,10 +1,12 @@
 import type { ComponentType } from 'react';
 import {
   Box,
+  CircleDashed,
   Eraser,
   MousePointer2,
   Paintbrush,
   Scissors,
+  Spline,
   Square,
   Triangle,
 } from 'lucide-react';
@@ -44,6 +46,8 @@ const TOOLS: ToolDef[] = [
   { id: 'tile', icon: Square, label: 'Tile', shortcut: '2' },
   { id: 'stairs', icon: StairsIcon, label: 'Stairs', shortcut: '3' },
   { id: 'slope', icon: Triangle, label: 'Slope', shortcut: '4' },
+  { id: 'curve', icon: CircleDashed, label: 'Curve (vertical)', shortcut: '5' },
+  { id: 'curveHorizontal', icon: Spline, label: 'Curve (horizontal)', shortcut: '6' },
   { id: 'brush', icon: Paintbrush, label: 'Brush', shortcut: 'B' },
   { id: 'erase', icon: Eraser, label: 'Erase', shortcut: 'E' },
   { id: 'cutout', icon: Scissors, label: 'Cutout', shortcut: 'C' },

@@ -3,7 +3,10 @@ import styles from './Overlays.module.css';
 
 const SHORTCUTS: { keys: string; description: string }[] = [
   { keys: 'V', description: 'Select tool' },
-  { keys: '1 / 2 / 3 / 4', description: 'Cube / Tile / Stairs / Slope' },
+  {
+    keys: '1 / 2 / 3 / 4 / 5 / 6',
+    description: 'Cube / Tile / Stairs / Slope / Curve / Curve (horizontal)',
+  },
   { keys: 'B', description: 'Brush tool' },
   { keys: 'E', description: 'Erase tool' },
   { keys: 'C', description: 'Cutout tool' },
