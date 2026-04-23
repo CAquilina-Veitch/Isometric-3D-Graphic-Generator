@@ -179,6 +179,10 @@ type UiSlice = {
   sceneDirty: number;
   ghostRotationY: number;
   helpOpen: boolean;
+  /** When true, placement is restricted to a gridBoundsSize × gridBoundsSize square in XZ. */
+  gridBoundsEnabled: boolean;
+  /** Number of 1-unit cells per side of the bounding square. Infinite in Y. */
+  gridBoundsSize: number;
 };
 
 type UiActions = {
@@ -190,6 +194,8 @@ type UiActions = {
   markSceneDirty: () => void;
   rotateGhost: () => void;
   toggleHelp: () => void;
+  setGridBoundsEnabled: (enabled: boolean) => void;
+  setGridBoundsSize: (size: number) => void;
 };
 
 export type Store = SceneSlice & SceneActions & UiSlice & UiActions;
@@ -491,6 +497,8 @@ export const useStore = create<Store>((set, get) => ({
   sceneDirty: 0,
   ghostRotationY: 0,
   helpOpen: false,
+  gridBoundsEnabled: false,
+  gridBoundsSize: 10,
 
   setActiveTool: (t) =>
     set((s) => ({
@@ -507,6 +515,8 @@ export const useStore = create<Store>((set, get) => ({
   markSceneDirty: () => set((s) => ({ sceneDirty: s.sceneDirty + 1 })),
   rotateGhost: () => set((s) => ({ ghostRotationY: (s.ghostRotationY + 90) % 360 })),
   toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
+  setGridBoundsEnabled: (enabled) => set({ gridBoundsEnabled: enabled }),
+  setGridBoundsSize: (size) => set({ gridBoundsSize: Math.max(1, Math.round(size)) }),
 }));
 
 /** Generates a short unique id for primitives. */

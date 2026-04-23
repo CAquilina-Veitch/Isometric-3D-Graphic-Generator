@@ -5,10 +5,49 @@ import styles from './RightPanel.module.css';
 export default function RenderTab() {
   const state = useStore((s) => s.renderState);
   const update = useStore((s) => s.updateRender);
+  const gridBoundsEnabled = useStore((s) => s.gridBoundsEnabled);
+  const gridBoundsSize = useStore((s) => s.gridBoundsSize);
+  const setGridBoundsEnabled = useStore((s) => s.setGridBoundsEnabled);
+  const setGridBoundsSize = useStore((s) => s.setGridBoundsSize);
 
   return (
     <div className={styles.section}>
-      <div className={styles.sectionTitle}>Background</div>
+      <div className={styles.sectionTitle}>Workspace</div>
+      <div className={styles.row}>
+        <button
+          data-active={!gridBoundsEnabled}
+          onClick={() => setGridBoundsEnabled(false)}
+        >
+          Unbounded
+        </button>
+        <button
+          data-active={gridBoundsEnabled}
+          onClick={() => setGridBoundsEnabled(true)}
+        >
+          Bounded
+        </button>
+      </div>
+      {gridBoundsEnabled && (
+        <div className={styles.field}>
+          <label className={styles.fieldLabel}>Size</label>
+          <input
+            className={styles.input}
+            type="number"
+            min={1}
+            max={40}
+            step={1}
+            value={gridBoundsSize}
+            onChange={(e) => setGridBoundsSize(parseInt(e.target.value, 10) || 1)}
+          />
+          <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>
+            {gridBoundsSize}×{gridBoundsSize}
+          </span>
+        </div>
+      )}
+
+      <div className={styles.sectionTitle} style={{ marginTop: 10 }}>
+        Background
+      </div>
       <div className={styles.row}>
         <button
           data-active={state.backgroundTransparent}

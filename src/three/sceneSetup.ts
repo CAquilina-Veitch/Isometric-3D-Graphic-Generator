@@ -2,12 +2,14 @@ import * as THREE from 'three';
 
 const FLOOR_SIZE = 40;
 const GRID_DIVISIONS = 40;
+const BOUNDS_NAME = 'gridBoundsOverlay';
 
 let sharedScene: THREE.Scene | null = null;
 let gridHelper: THREE.GridHelper | null = null;
 let ambientLight: THREE.AmbientLight | null = null;
 let directionalLight: THREE.DirectionalLight | null = null;
 let floorMesh: THREE.Mesh | null = null;
+let boundsOverlay: THREE.LineSegments | null = null;
 
 export function getScene(): THREE.Scene {
   if (sharedScene) return sharedScene;
@@ -53,6 +55,55 @@ export function getScene(): THREE.Scene {
 
 export function setGridVisible(visible: boolean) {
   if (gridHelper) gridHelper.visible = visible;
+}
+
+/**
+ * Draw a bright outline around the N×N cell area that placements are restricted to.
+ * Hides when `enabled` is false. Extent is aligned to the same half-integer snap
+ * grid that groundPlacement uses, so the overlay and actual placements line up.
+ */
+export function updateGridBoundsOverlay(
+  enabled: boolean,
+  size: number,
+  minCenter: number,
+  maxCenter: number,
+) {
+  if (!sharedScene) return;
+  if (!enabled) {
+    if (boundsOverlay) boundsOverlay.visible = false;
+    return;
+  }
+  if (!boundsOverlay) {
+    const material = new THREE.LineBasicMaterial({
+      color: 0x5aa1ff,
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+      depthTest: false,
+    });
+    const geometry = new THREE.BufferGeometry();
+    boundsOverlay = new THREE.LineSegments(geometry, material);
+    boundsOverlay.name = BOUNDS_NAME;
+    boundsOverlay.renderOrder = 998;
+    boundsOverlay.userData.editorOnly = true;
+    sharedScene.add(boundsOverlay);
+  }
+  // Rebuild geometry to match the current bound size. LineSegments expects pairs
+  // of vertices per line, so the square is 4 edges = 8 vertices.
+  const lo = minCenter - 0.5;
+  const hi = maxCenter + 0.5;
+  const y = 0.002;
+  const v = new Float32Array([
+    lo, y, lo, hi, y, lo,
+    hi, y, lo, hi, y, hi,
+    hi, y, hi, lo, y, hi,
+    lo, y, hi, lo, y, lo,
+  ]);
+  void size;
+  boundsOverlay.geometry.dispose();
+  boundsOverlay.geometry = new THREE.BufferGeometry();
+  boundsOverlay.geometry.setAttribute('position', new THREE.BufferAttribute(v, 3));
+  boundsOverlay.visible = true;
 }
 
 export function applyLightState(state: {
@@ -167,4 +218,5 @@ export function disposeSharedScene() {
   });
   sharedScene = null;
   gridHelper = null;
+  boundsOverlay = null;
 }

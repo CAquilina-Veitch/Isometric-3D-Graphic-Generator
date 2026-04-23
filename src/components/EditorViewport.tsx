@@ -6,8 +6,17 @@ import {
   makeEditorCamera,
   createRenderer,
   resizeOrthoCamera,
+  updateGridBoundsOverlay,
 } from '../three/sceneSetup';
 import { getOrCreateGhost, removeGhost } from '../three/ghost';
+import { createGhostPool, type GhostPool } from '../three/ghostPool';
+import {
+  cellSize,
+  computeCellDeltas,
+  lockedPositions,
+  updateDragLock,
+  type DragLockState,
+} from '../three/placementDrag';
 import {
   getPrimitivesGroupObject,
   getSelectableMeshes,
@@ -15,7 +24,7 @@ import {
 } from '../three/sceneSync';
 import { createGizmo } from '../three/gizmo';
 import { useStore, nextPrimitiveId, type Primitive, type PrimitiveType } from '../state/store';
-import { groundPlacement, gridCellKey } from '../utils/snap';
+import { groundPlacement, gridBoundsXZ, withinGridBounds } from '../utils/snap';
 import { beginTx, commitTx, record } from '../hooks/useHistory';
 import styles from './Viewport.module.css';
 
@@ -172,30 +181,48 @@ export default function EditorViewport() {
       return { x, y, z };
     };
 
-    const recentCells = new Set<string>();
+    /**
+     * Active drag-placement session. Null when not currently placing.
+     * Populated on pointerdown over a placement tool; preview ghosts track the lock
+     * state; on pointerup all ghost positions commit to real primitives in one tx.
+     */
+    type PlacementDrag = {
+      type: PrimitiveType;
+      anchor: { x: number; y: number; z: number };
+      downClientX: number;
+      downClientY: number;
+      lock: DragLockState;
+      pool: GhostPool;
+      size: { x: number; y: number; z: number };
+    };
+    let placementDrag: PlacementDrag | null = null;
 
-    const placeAt = (type: PrimitiveType, placement: PlacementHit) => {
-      const pos = resolvePlacement(type, placement);
-      if (!pos) return;
-      const key = gridCellKey(type, pos.x, pos.y, pos.z);
-      if (recentCells.has(key)) return;
-      recentCells.add(key);
-      const ry = useStore.getState().ghostRotationY;
-      useStore.getState().addPrimitive({
-        id: nextPrimitiveId(),
-        type,
-        position: pos,
-        rotation: { x: 0, y: ry, z: 0 },
-        scale: { x: 1, y: 1, z: 1 },
-      });
+    /** Drop any preview/commit positions that fall outside the N×N grid bounds (when enabled). */
+    const filterByBounds = (
+      positions: Array<{ x: number; y: number; z: number }>,
+    ): Array<{ x: number; y: number; z: number }> => {
+      const s = useStore.getState();
+      if (!s.gridBoundsEnabled) return positions;
+      return positions.filter((p) => withinGridBounds(p.x, p.z, s.gridBoundsSize));
+    };
+
+    const updatePlacementDragGhosts = (drag: PlacementDrag) => {
+      const positions = filterByBounds(lockedPositions(drag.anchor, drag.lock, drag.size));
+      drag.pool.setPositions(positions, useStore.getState().ghostRotationY);
     };
 
     const updateGhost = (type: PrimitiveType, placement: PlacementHit) => {
       const pos = resolvePlacement(type, placement);
       if (!pos) return;
+      const s = useStore.getState();
+      if (s.gridBoundsEnabled && !withinGridBounds(pos.x, pos.z, s.gridBoundsSize)) {
+        // Outside the bounded floor — hide the hover preview to signal "can't place here".
+        removeGhost(scene);
+        return;
+      }
       const ghost = getOrCreateGhost(scene, type);
       ghost.position.set(pos.x, pos.y, pos.z);
-      ghost.rotation.y = (useStore.getState().ghostRotationY * Math.PI) / 180;
+      ghost.rotation.y = (s.ghostRotationY * Math.PI) / 180;
     };
 
     const paintedIds = new Set<string>();
@@ -240,6 +267,25 @@ export default function EditorViewport() {
     };
 
     const onPointerMove = (ev: PointerEvent) => {
+      if (placementDrag) {
+        // Active mass-placement drag: convert screen delta → per-axis cell deltas,
+        // update the lock state machine, and refresh the preview ghosts.
+        const rect = canvas.getBoundingClientRect();
+        const dx = ev.clientX - placementDrag.downClientX;
+        const dy = ev.clientY - placementDrag.downClientY;
+        const deltas = computeCellDeltas(
+          camera,
+          placementDrag.anchor,
+          dx,
+          dy,
+          rect.width,
+          rect.height,
+          placementDrag.size,
+        );
+        placementDrag.lock = updateDragLock(placementDrag.lock, deltas);
+        updatePlacementDragGhosts(placementDrag);
+        return;
+      }
       if (activeTool === 'brush' && dragging) {
         paintAtPointer(ev);
         return;
@@ -253,7 +299,6 @@ export default function EditorViewport() {
         if (!h) return;
         if (isPlacementTool(activeTool)) {
           updateGhost(activeTool, h);
-          if (dragging) placeAt(activeTool, h);
         }
       }
     };
@@ -361,18 +406,54 @@ export default function EditorViewport() {
       }
       if (isPlacementTool(activeTool)) {
         ev.stopPropagation();
-        recentCells.clear();
+        const anchor = resolvePlacement(activeTool, h);
+        if (!anchor) return;
+        const s = useStore.getState();
+        if (s.gridBoundsEnabled && !withinGridBounds(anchor.x, anchor.z, s.gridBoundsSize)) {
+          // Clicking outside the bounds is a no-op — no anchor, no preview.
+          return;
+        }
+        // Switch the hover ghost off; the pool owns all preview rendering during a drag.
+        removeGhost(scene);
+        const pool = createGhostPool(scene, activeTool);
+        placementDrag = {
+          type: activeTool,
+          anchor,
+          downClientX: ev.clientX,
+          downClientY: ev.clientY,
+          lock: { primary: null, secondary: null },
+          pool,
+          size: cellSize(activeTool),
+        };
+        updatePlacementDragGhosts(placementDrag);
         dragging = true;
         beginTx();
-        placeAt(activeTool, h);
         canvas.setPointerCapture(ev.pointerId);
       }
     };
 
     const onPointerUp = (ev: PointerEvent) => {
+      if (placementDrag) {
+        // Convert preview → real primitives. A zero-lock session (simple click) still
+        // yields exactly one position (the anchor), so click-to-place behaviour survives.
+        const positions = filterByBounds(
+          lockedPositions(placementDrag.anchor, placementDrag.lock, placementDrag.size),
+        );
+        const ry = useStore.getState().ghostRotationY;
+        for (const pos of positions) {
+          useStore.getState().addPrimitive({
+            id: nextPrimitiveId(),
+            type: placementDrag.type,
+            position: pos,
+            rotation: { x: 0, y: ry, z: 0 },
+            scale: { x: 1, y: 1, z: 1 },
+          });
+        }
+        placementDrag.pool.dispose();
+        placementDrag = null;
+      }
       if (dragging) {
         dragging = false;
-        recentCells.clear();
         paintedIds.clear();
         erasedIds.clear();
         commitTx();
@@ -422,14 +503,34 @@ export default function EditorViewport() {
       gizmo.attach(mesh, primitive as Primitive);
     };
 
+    const cancelPlacementDrag = () => {
+      if (!placementDrag) return;
+      placementDrag.pool.dispose();
+      placementDrag = null;
+      if (dragging) {
+        dragging = false;
+        commitTx();
+      }
+    };
+
     const applyToolState = (tool: typeof activeTool) => {
       activeTool = tool;
       // Left-click is always owned by the active tool — camera uses middle/right.
       controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
-      if (!isPlacementTool(tool)) removeGhost(scene);
+      if (!isPlacementTool(tool)) {
+        cancelPlacementDrag();
+        removeGhost(scene);
+      }
       refreshGizmo();
     };
     applyToolState(activeTool);
+
+    const syncBoundsOverlay = () => {
+      const s = useStore.getState();
+      const b = gridBoundsXZ(s.gridBoundsSize);
+      updateGridBoundsOverlay(s.gridBoundsEnabled, s.gridBoundsSize, b.min, b.max);
+    };
+    syncBoundsOverlay();
 
     let frame = 0;
     const tick = () => {
@@ -459,6 +560,12 @@ export default function EditorViewport() {
         const ghost = scene.getObjectByName('ghostPreview');
         if (ghost) ghost.rotation.y = (s.ghostRotationY * Math.PI) / 180;
       }
+      if (
+        s.gridBoundsEnabled !== prev.gridBoundsEnabled ||
+        s.gridBoundsSize !== prev.gridBoundsSize
+      ) {
+        syncBoundsOverlay();
+      }
     });
 
     return () => {
@@ -472,6 +579,7 @@ export default function EditorViewport() {
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('contextmenu', onContextMenu);
+      cancelPlacementDrag();
       removeGhost(scene);
       unsubStore();
     };

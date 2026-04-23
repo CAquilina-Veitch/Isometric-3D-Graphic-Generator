@@ -54,3 +54,23 @@ export function gridCellKey(type: PrimitiveType, x: number, y: number, z: number
     Math.round(z / step.xz),
   ].join(':');
 }
+
+/**
+ * Axis-aligned XZ bounds for an N-cells-per-side square, aligned to the half-integer
+ * snap grid used by groundPlacement. Y is intentionally unbounded.
+ *
+ *  - For even N the square is centered on the origin.
+ *  - For odd N the square is offset by +0.5 on each axis so N cells fit without
+ *    splitting (e.g. N=5 → cube centers at {-1.5, -0.5, 0.5, 1.5, 2.5}).
+ */
+export function gridBoundsXZ(size: number): { min: number; max: number } {
+  const lo = -Math.floor(size / 2) + 0.5;
+  const hi = lo + size - 1;
+  return { min: lo, max: hi };
+}
+
+/** Is the given primitive-center XZ position within the N×N grid bounds? */
+export function withinGridBounds(x: number, z: number, size: number): boolean {
+  const b = gridBoundsXZ(size);
+  return x >= b.min && x <= b.max && z >= b.min && z <= b.max;
+}
