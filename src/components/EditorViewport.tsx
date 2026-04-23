@@ -9,7 +9,8 @@ import {
 } from '../three/sceneSetup';
 import { getOrCreateGhost, removeGhost } from '../three/ghost';
 import { getPrimitivesGroupObject, primitiveIdFor } from '../three/sceneSync';
-import { useStore, nextPrimitiveId, type PrimitiveType } from '../state/store';
+import { createGizmo } from '../three/gizmo';
+import { useStore, nextPrimitiveId, type Primitive, type PrimitiveType } from '../state/store';
 import { groundPlacement, gridCellKey } from '../utils/snap';
 import styles from './Viewport.module.css';
 
@@ -150,6 +151,42 @@ export default function EditorViewport() {
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointerleave', onPointerLeave);
 
+    const gizmo = createGizmo({
+      camera,
+      domElement: canvas,
+      scene,
+      onDraggingChange: (dragging) => {
+        controls.enabled = !dragging;
+      },
+    });
+
+    const refreshGizmo = () => {
+      if (activeTool !== 'gizmo') {
+        gizmo.detach();
+        return;
+      }
+      const state = useStore.getState();
+      if (state.selectedIds.length !== 1) {
+        gizmo.detach();
+        return;
+      }
+      const id = state.selectedIds[0];
+      const primitive = state.primitives.find((p) => p.id === id);
+      if (!primitive) {
+        gizmo.detach();
+        return;
+      }
+      const group = getPrimitivesGroupObject();
+      const mesh = group.children.find(
+        (c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.primitiveId === id,
+      );
+      if (!mesh) {
+        gizmo.detach();
+        return;
+      }
+      gizmo.attach(mesh, primitive as Primitive);
+    };
+
     const applyToolState = (tool: typeof activeTool) => {
       activeTool = tool;
       if (isPlacementTool(tool) || tool === 'select') {
@@ -158,6 +195,7 @@ export default function EditorViewport() {
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
       }
       if (!isPlacementTool(tool)) removeGhost(scene);
+      refreshGizmo();
     };
     applyToolState(activeTool);
 
@@ -182,12 +220,16 @@ export default function EditorViewport() {
         if (grid) grid.visible = s.showGrid;
       }
       if (s.activeTool !== prev.activeTool) applyToolState(s.activeTool);
+      if (s.selectedIds !== prev.selectedIds || s.primitives !== prev.primitives) {
+        refreshGizmo();
+      }
     });
 
     return () => {
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       controls.dispose();
+      gizmo.dispose();
       renderer.dispose();
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerdown', onPointerDown);

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import * as THREE from 'three';
 import {
   getScene,
   makeRenderCamera,
@@ -33,11 +34,17 @@ export default function PreviewViewport() {
     };
 
     const render = () => {
-      const grid = scene.getObjectByName('gridHelper');
-      const gridWasVisible = grid?.visible ?? false;
-      if (grid) grid.visible = false;
+      const hidden: { obj: THREE.Object3D; prev: boolean }[] = [];
+      scene.traverse((obj) => {
+        if (obj.userData.editorOnly === true || obj.name === 'gridHelper') {
+          if (obj.visible) {
+            hidden.push({ obj, prev: true });
+            obj.visible = false;
+          }
+        }
+      });
       renderer.render(scene, camera);
-      if (grid) grid.visible = gridWasVisible;
+      for (const { obj, prev } of hidden) obj.visible = prev;
     };
 
     let frame = 0;
