@@ -85,6 +85,16 @@ const DEFAULT_MATERIALS: Material[] = [
   { id: 'def-slate', name: 'Slate',   textureKind: 'checker', color: '#586070', secondaryColor: '#2e3340', roughness: 0.85, metalness: 0.05 },
 ];
 
+export type StoredScene = {
+  id: string;
+  name: string;
+  primitives: Primitive[];
+  cutouts: Cutout[];
+  renderCameraState: RenderCameraState;
+  lightState: LightState;
+  renderState: RenderState;
+};
+
 type SceneSlice = {
   primitives: Primitive[];
   cutouts: Cutout[];
@@ -98,6 +108,10 @@ type SceneSlice = {
   renderCameraState: RenderCameraState;
   lightState: LightState;
   renderState: RenderState;
+  projectId: string;
+  projectName: string;
+  scenes: StoredScene[];
+  activeSceneId: string;
 };
 
 type SceneActions = {
@@ -119,6 +133,22 @@ type SceneActions = {
   updateRenderCamera: (patch: Partial<RenderCameraState>) => void;
   updateLight: (patch: Partial<LightState>) => void;
   updateRender: (patch: Partial<RenderState>) => void;
+  addScene: (name?: string) => void;
+  removeScene: (id: string) => void;
+  renameScene: (id: string, name: string) => void;
+  switchScene: (id: string) => void;
+  setProjectName: (name: string) => void;
+  newProject: () => void;
+  loadProjectData: (data: ProjectData) => void;
+};
+
+export type ProjectData = {
+  id: string;
+  name: string;
+  scenes: StoredScene[];
+  activeSceneId: string;
+  cutoutImages: Record<string, CutoutImage>;
+  schemaVersion: number;
 };
 
 type UiSlice = {
@@ -129,6 +159,7 @@ type UiSlice = {
   snapEnabled: boolean;
   sceneDirty: number;
   ghostRotationY: number;
+  helpOpen: boolean;
 };
 
 type UiActions = {
@@ -139,6 +170,7 @@ type UiActions = {
   toggleSnap: () => void;
   markSceneDirty: () => void;
   rotateGhost: () => void;
+  toggleHelp: () => void;
 };
 
 export type Store = SceneSlice & SceneActions & UiSlice & UiActions;
@@ -147,6 +179,55 @@ const seededMaterials: Record<string, Material> = Object.fromEntries(
   DEFAULT_MATERIALS.map((m) => [m.id, m]),
 );
 const defaultRotationIds = DEFAULT_MATERIALS.map((m) => m.id);
+
+const DEFAULT_RENDER_CAMERA: RenderCameraState = {
+  isoAnglePreset: 30,
+  zoom: 8,
+};
+
+const DEFAULT_LIGHT: LightState = {
+  directionalIntensity: 1.1,
+  ambientIntensity: 0.35,
+  azimuthDeg: 40,
+  elevationDeg: 55,
+  shadowSoftness: 1.0,
+};
+
+const DEFAULT_RENDER: RenderState = {
+  backgroundTransparent: true,
+  backgroundColor: '#f0f0f0',
+  shadowIntensity: 0.35,
+  exportScale: 2,
+};
+
+function makeEmptyScene(name: string): StoredScene {
+  return {
+    id: `scene-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+    name,
+    primitives: [],
+    cutouts: [],
+    renderCameraState: { ...DEFAULT_RENDER_CAMERA },
+    lightState: { ...DEFAULT_LIGHT },
+    renderState: { ...DEFAULT_RENDER },
+  };
+}
+
+const initialScene = makeEmptyScene('Scene 1');
+
+function snapshotCurrent(s: Store): StoredScene[] {
+  return s.scenes.map((sc) =>
+    sc.id === s.activeSceneId
+      ? {
+          ...sc,
+          primitives: s.primitives,
+          cutouts: s.cutouts,
+          renderCameraState: s.renderCameraState,
+          lightState: s.lightState,
+          renderState: s.renderState,
+        }
+      : sc,
+  );
+}
 
 export const useStore = create<Store>((set, get) => ({
   primitives: [],
@@ -158,23 +239,13 @@ export const useStore = create<Store>((set, get) => ({
   paletteOrder: defaultRotationIds.slice(),
   activeBrushMaterialId: defaultRotationIds[0] ?? null,
   defaultRotationIndex: 0,
-  renderCameraState: {
-    isoAnglePreset: 30,
-    zoom: 8,
-  },
-  lightState: {
-    directionalIntensity: 1.1,
-    ambientIntensity: 0.35,
-    azimuthDeg: 40,
-    elevationDeg: 55,
-    shadowSoftness: 1.0,
-  },
-  renderState: {
-    backgroundTransparent: true,
-    backgroundColor: '#f0f0f0',
-    shadowIntensity: 0.35,
-    exportScale: 2,
-  },
+  renderCameraState: { ...DEFAULT_RENDER_CAMERA },
+  lightState: { ...DEFAULT_LIGHT },
+  renderState: { ...DEFAULT_RENDER },
+  projectId: `proj-${Date.now().toString(36)}`,
+  projectName: 'Untitled Project',
+  scenes: [initialScene],
+  activeSceneId: initialScene.id,
 
   addPrimitive: (input) => {
     const order = get().paletteOrder;
@@ -294,6 +365,104 @@ export const useStore = create<Store>((set, get) => ({
       renderState: { ...s.renderState, ...patch },
       sceneDirty: s.sceneDirty + 1,
     })),
+  addScene: (name) =>
+    set((s) => {
+      const next = makeEmptyScene(name ?? `Scene ${s.scenes.length + 1}`);
+      const snapshotted = snapshotCurrent(s);
+      return {
+        scenes: [...snapshotted, next],
+        activeSceneId: next.id,
+        primitives: next.primitives,
+        cutouts: next.cutouts,
+        renderCameraState: next.renderCameraState,
+        lightState: next.lightState,
+        renderState: next.renderState,
+        selectedIds: [],
+        sceneDirty: s.sceneDirty + 1,
+      };
+    }),
+  removeScene: (id) =>
+    set((s) => {
+      if (s.scenes.length <= 1) return s;
+      const remaining = s.scenes.filter((sc) => sc.id !== id);
+      if (s.activeSceneId === id) {
+        const next = remaining[0];
+        return {
+          scenes: remaining,
+          activeSceneId: next.id,
+          primitives: next.primitives,
+          cutouts: next.cutouts,
+          renderCameraState: next.renderCameraState,
+          lightState: next.lightState,
+          renderState: next.renderState,
+          selectedIds: [],
+          sceneDirty: s.sceneDirty + 1,
+        };
+      }
+      return { scenes: remaining };
+    }),
+  renameScene: (id, name) =>
+    set((s) => ({
+      scenes: s.scenes.map((sc) => (sc.id === id ? { ...sc, name } : sc)),
+    })),
+  switchScene: (id) =>
+    set((s) => {
+      if (id === s.activeSceneId) return s;
+      const snapshotted = snapshotCurrent(s);
+      const target = snapshotted.find((sc) => sc.id === id);
+      if (!target) return s;
+      return {
+        scenes: snapshotted,
+        activeSceneId: id,
+        primitives: target.primitives,
+        cutouts: target.cutouts,
+        renderCameraState: target.renderCameraState,
+        lightState: target.lightState,
+        renderState: target.renderState,
+        selectedIds: [],
+        sceneDirty: s.sceneDirty + 1,
+      };
+    }),
+  setProjectName: (name) => set({ projectName: name }),
+  newProject: () =>
+    set(() => {
+      const scene = makeEmptyScene('Scene 1');
+      return {
+        projectId: `proj-${Date.now().toString(36)}`,
+        projectName: 'Untitled Project',
+        scenes: [scene],
+        activeSceneId: scene.id,
+        primitives: scene.primitives,
+        cutouts: scene.cutouts,
+        cutoutImages: {},
+        activeCutoutImageId: null,
+        renderCameraState: scene.renderCameraState,
+        lightState: scene.lightState,
+        renderState: scene.renderState,
+        selectedIds: [],
+        sceneDirty: 1,
+      };
+    }),
+  loadProjectData: (data) =>
+    set(() => {
+      const active = data.scenes.find((sc) => sc.id === data.activeSceneId) ?? data.scenes[0];
+      if (!active) return {};
+      return {
+        projectId: data.id,
+        projectName: data.name,
+        scenes: data.scenes,
+        activeSceneId: active.id,
+        primitives: active.primitives,
+        cutouts: active.cutouts,
+        cutoutImages: data.cutoutImages,
+        activeCutoutImageId: Object.keys(data.cutoutImages)[0] ?? null,
+        renderCameraState: active.renderCameraState,
+        lightState: active.lightState,
+        renderState: active.renderState,
+        selectedIds: [],
+        sceneDirty: 1,
+      };
+    }),
 
   activeTool: 'select',
   activeRightTab: 'properties',
@@ -302,6 +471,7 @@ export const useStore = create<Store>((set, get) => ({
   snapEnabled: true,
   sceneDirty: 0,
   ghostRotationY: 0,
+  helpOpen: false,
 
   setActiveTool: (t) => set({ activeTool: t, ghostRotationY: 0 }),
   setActiveRightTab: (t) => set({ activeRightTab: t }),
@@ -310,6 +480,7 @@ export const useStore = create<Store>((set, get) => ({
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   markSceneDirty: () => set((s) => ({ sceneDirty: s.sceneDirty + 1 })),
   rotateGhost: () => set((s) => ({ ghostRotationY: (s.ghostRotationY + 90) % 360 })),
+  toggleHelp: () => set((s) => ({ helpOpen: !s.helpOpen })),
 }));
 
 /** Generates a short unique id for primitives. */

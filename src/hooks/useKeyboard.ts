@@ -32,6 +32,12 @@ export function useKeyboard() {
       }
       if (mod) return;
 
+      if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
+        e.preventDefault();
+        s.toggleHelp();
+        return;
+      }
+
       switch (e.key.toLowerCase()) {
         case 'v':
           s.setActiveTool('select');

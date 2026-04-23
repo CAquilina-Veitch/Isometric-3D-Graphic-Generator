@@ -37,6 +37,35 @@
 .tab {
   padding: 2px 10px;
   font-size: 13px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectInput {
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--fg-0);
+  padding: 2px 6px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  outline: none;
+  min-width: 160px;
+}
+
+.tabInput {
+  background: var(--bg-2);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--fg-0);
+  padding: 2px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  width: 100px;
 }
 
 button:disabled {

@@ -8,3 +8,90 @@
 .overlays > * {
   pointer-events: auto;
 }
+
+.emptyHint {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 17, 21, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  color: var(--fg-1);
+  font-size: 12px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  min-width: 420px;
+  max-width: 520px;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.modalHeader button {
+  padding: 2px 8px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.shortcutList {
+  list-style: none;
+  padding: 12px;
+  margin: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shortcutList li {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.shortcutList kbd {
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  padding: 1px 8px;
+  font-family: ui-monospace, 'Consolas', monospace;
+  font-size: 11px;
+  min-width: 160px;
+  text-align: center;
+}
+
+.shortcutList span {
+  color: var(--fg-1);
+}
