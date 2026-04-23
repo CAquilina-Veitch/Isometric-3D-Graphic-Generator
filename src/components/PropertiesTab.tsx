@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore, type Primitive } from '../state/store';
+import { record } from '../hooks/useHistory';
 import styles from './RightPanel.module.css';
 
 export default function PropertiesTab() {
@@ -33,8 +34,10 @@ function BoundProperties({ primitive }: { primitive: Primitive }) {
     axis: 'x' | 'y' | 'z',
     value: number,
   ) => {
-    updatePrimitive(primitive.id, {
-      [field]: { ...primitive[field], [axis]: value },
+    record(() => {
+      updatePrimitive(primitive.id, {
+        [field]: { ...primitive[field], [axis]: value },
+      });
     });
   };
 

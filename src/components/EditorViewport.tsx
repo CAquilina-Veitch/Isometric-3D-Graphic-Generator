@@ -12,6 +12,7 @@ import { getPrimitivesGroupObject, primitiveIdFor } from '../three/sceneSync';
 import { createGizmo } from '../three/gizmo';
 import { useStore, nextPrimitiveId, type Primitive, type PrimitiveType } from '../state/store';
 import { groundPlacement, gridCellKey } from '../utils/snap';
+import { beginTx, commitTx } from '../hooks/useHistory';
 import styles from './Viewport.module.css';
 
 const ZOOM_SCALE = 10;
@@ -152,6 +153,7 @@ export default function EditorViewport() {
         ev.stopPropagation();
         paintedIds.clear();
         dragging = true;
+        beginTx();
         paintAtPointer(ev);
         canvas.setPointerCapture(ev.pointerId);
         return;
@@ -162,6 +164,7 @@ export default function EditorViewport() {
         ev.stopPropagation();
         recentCells.clear();
         dragging = true;
+        beginTx();
         placeAt(activeTool, h.x, h.z);
         canvas.setPointerCapture(ev.pointerId);
       }
@@ -172,6 +175,7 @@ export default function EditorViewport() {
         dragging = false;
         recentCells.clear();
         paintedIds.clear();
+        commitTx();
         canvas.releasePointerCapture(ev.pointerId);
       }
     };

@@ -38,3 +38,8 @@
   padding: 2px 10px;
   font-size: 13px;
 }
+
+button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

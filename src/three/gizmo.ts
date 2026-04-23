@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { useStore, type Primitive, type Vec3 } from '../state/store';
 import { GRID_STEP } from '../utils/snap';
+import { beginTx, commitTx } from '../hooks/useHistory';
 
 export type GizmoHost = {
   camera: THREE.Camera;
@@ -47,8 +48,14 @@ export function createGizmo(host: GizmoHost): {
   controls.addEventListener('dragging-changed', (ev) => {
     const dragging = (ev as unknown as { value: boolean }).value;
     host.onDraggingChange(dragging);
-    if (dragging) return;
-    if (!controls.object || !currentPrimitive) return;
+    if (dragging) {
+      beginTx();
+      return;
+    }
+    if (!controls.object || !currentPrimitive) {
+      commitTx();
+      return;
+    }
 
     const snapped = snapPrimitivePosition(
       currentPrimitive.type,
@@ -60,6 +67,7 @@ export function createGizmo(host: GizmoHost): {
       currentPrimitive.position,
     );
     useStore.getState().updatePrimitive(currentPrimitive.id, { position: snapped });
+    commitTx();
   });
 
   return {

@@ -1,9 +1,11 @@
 import { useStore } from '../state/store';
+import { undo, redo, useHistoryState } from '../hooks/useHistory';
 import styles from './Toolbar.module.css';
 
 export default function Toolbar() {
   const previewVisible = useStore((s) => s.previewVisible);
   const togglePreview = useStore((s) => s.togglePreview);
+  const { canUndo, canRedo } = useHistoryState();
 
   return (
     <header className={styles.toolbar}>
@@ -17,8 +19,12 @@ export default function Toolbar() {
       </div>
 
       <div className={styles.right}>
-        <button title="Undo (Ctrl+Z)">⎌</button>
-        <button title="Redo (Ctrl+Shift+Z)">⎌</button>
+        <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          ⎌
+        </button>
+        <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+          ⎌
+        </button>
         <div className={styles.sep} />
         <button>Save</button>
         <button>Export</button>
