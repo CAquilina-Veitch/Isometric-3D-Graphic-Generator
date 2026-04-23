@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { useStore, type Primitive } from '../state/store';
+import { useStore, type Material, type Primitive } from '../state/store';
 import { getScene } from './sceneSetup';
-import { applyTransform, createMeshForPrimitive } from './primitives';
+import { applyTransform, createMeshForPrimitive, createThreeMaterial } from './primitives';
 
 const PRIMITIVES_GROUP = 'primitivesGroup';
 const SELECTED_EMISSIVE = 0x3a5fd9;
@@ -21,15 +21,20 @@ export function initSceneSync(): () => void {
   const group = getPrimitivesGroup(scene);
   const meshById = new Map<string, THREE.Mesh>();
 
-  reconcile(useStore.getState().primitives, group, meshById);
+  const resolveMaterial = (id: string | null): Material | null =>
+    id ? useStore.getState().materials[id] ?? null : null;
+
+  reconcile(useStore.getState().primitives, group, meshById, resolveMaterial);
   applySelection(useStore.getState().selectedIds, meshById);
 
   const unsub = useStore.subscribe((s, prev) => {
-    if (s.primitives !== prev.primitives) {
-      reconcile(s.primitives, group, meshById);
+    const primitivesChanged = s.primitives !== prev.primitives;
+    const materialsChanged = s.materials !== prev.materials;
+    if (primitivesChanged || materialsChanged) {
+      reconcile(s.primitives, group, meshById, resolveMaterial);
       applySelection(s.selectedIds, meshById);
     }
-    if (s.selectedIds !== prev.selectedIds) {
+    if (!primitivesChanged && !materialsChanged && s.selectedIds !== prev.selectedIds) {
       applySelection(s.selectedIds, meshById);
     }
   });
@@ -44,7 +49,6 @@ export function initSceneSync(): () => void {
   };
 }
 
-/** Returns the primitive id for a hit mesh, or null if it's not a primitive. */
 export function primitiveIdFor(object: THREE.Object3D | null): string | null {
   let o: THREE.Object3D | null = object;
   while (o) {
@@ -55,7 +59,6 @@ export function primitiveIdFor(object: THREE.Object3D | null): string | null {
   return null;
 }
 
-/** Returns the primitives group for raycasting. */
 export function getPrimitivesGroupObject(): THREE.Group {
   return getPrimitivesGroup(getScene());
 }
@@ -64,17 +67,22 @@ function reconcile(
   primitives: Primitive[],
   group: THREE.Group,
   meshById: Map<string, THREE.Mesh>,
+  resolveMaterial: (id: string | null) => Material | null,
 ) {
   const seen = new Set<string>();
   for (const p of primitives) {
     seen.add(p.id);
     const existing = meshById.get(p.id);
     if (!existing) {
-      const mesh = createMeshForPrimitive(p);
+      const mesh = createMeshForPrimitive(p, resolveMaterial(p.materialId));
       meshById.set(p.id, mesh);
       group.add(mesh);
     } else {
       applyTransform(existing, p);
+      if (existing.userData.materialId !== p.materialId) {
+        swapMaterial(existing, resolveMaterial(p.materialId));
+        existing.userData.materialId = p.materialId;
+      }
     }
   }
   for (const [id, mesh] of meshById) {
@@ -84,6 +92,13 @@ function reconcile(
       meshById.delete(id);
     }
   }
+}
+
+function swapMaterial(mesh: THREE.Mesh, material: Material | null) {
+  const old = mesh.material;
+  if (Array.isArray(old)) old.forEach((m) => m.dispose());
+  else old?.dispose();
+  mesh.material = createThreeMaterial(material);
 }
 
 function applySelection(

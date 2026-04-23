@@ -1,26 +1,41 @@
 import * as THREE from 'three';
-import type { Primitive, PrimitiveType } from '../state/store';
+import type { Material, Primitive, PrimitiveType } from '../state/store';
+import { getTexture } from './textures';
 
-const DEFAULT_COLORS: Record<PrimitiveType, number> = {
-  cube: 0x8aa2d4,
-  tile: 0xc4a47a,
-  stairs: 0xb38aa8,
-  slope: 0x8cbfa3,
-};
-
-export function createMeshForPrimitive(p: Primitive): THREE.Mesh {
+export function createMeshForPrimitive(
+  p: Primitive,
+  material: Material | null,
+): THREE.Mesh {
   const geometry = createGeometry(p.type);
-  const material = new THREE.MeshStandardMaterial({
-    color: DEFAULT_COLORS[p.type],
-    roughness: 0.6,
-    metalness: 0.05,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
+  const threeMaterial = createThreeMaterial(material);
+  const mesh = new THREE.Mesh(geometry, threeMaterial);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   applyTransform(mesh, p);
   mesh.userData.primitiveId = p.id;
+  mesh.userData.materialId = p.materialId;
   return mesh;
+}
+
+export function createThreeMaterial(material: Material | null): THREE.MeshStandardMaterial {
+  if (!material) {
+    return new THREE.MeshStandardMaterial({
+      color: 0x808080,
+      roughness: 0.6,
+      metalness: 0.05,
+    });
+  }
+  const map = getTexture({
+    kind: material.textureKind,
+    color: material.color,
+    secondaryColor: material.secondaryColor,
+  });
+  return new THREE.MeshStandardMaterial({
+    color: new THREE.Color(material.color),
+    map,
+    roughness: material.roughness,
+    metalness: material.metalness,
+  });
 }
 
 export function createGeometry(type: PrimitiveType): THREE.BufferGeometry {
@@ -64,28 +79,21 @@ function createStairsGeometry(): THREE.BufferGeometry {
 function createSlopeGeometry(): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const v = new Float32Array([
-    // bottom
     -0.5, -0.5, -0.5,
      0.5, -0.5, -0.5,
      0.5, -0.5,  0.5,
     -0.5, -0.5,  0.5,
-    // top edge (high end at +z, low at -z)
     -0.5,  0.5,  0.5,
      0.5,  0.5,  0.5,
   ]);
   const index = [
-    // bottom
     0, 2, 1,
     0, 3, 2,
-    // ramp (top)
     3, 4, 5,
     3, 5, 2,
-    // back (low end)
     0, 1, 4,
     1, 5, 4,
-    // left
     0, 4, 3,
-    // right
     1, 2, 5,
   ];
   g.setAttribute('position', new THREE.BufferAttribute(v, 3));
