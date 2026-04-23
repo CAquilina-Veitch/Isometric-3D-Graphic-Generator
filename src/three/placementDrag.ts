@@ -65,16 +65,34 @@ export const LOCK_THRESHOLD = 0.5;
  * @returns New lock state to render this frame.
  */
 export function updateDragLock(prev: DragLockState, deltas: CellDeltas): DragLockState {
-  // TODO(user): implement the locking + extent logic described above.
-  // Hint: pattern:
-  //   1) copy prev
-  //   2) if !primary → pick axis with max |deltas.scored[axis]| over threshold, lock it
-  //   3) if primary → update primary.extent = Math.round(deltas.raw[primary.axis])
-  //   4) if primary && !secondary → pick other axis with max |deltas.scored[axis]| over threshold
-  //   5) if secondary → update secondary.extent from deltas.raw
-  //   6) return the new state
-  void deltas;
-  return prev;
+  const axes: Axis[] = ['x', 'y', 'z'];
+
+  const pickBestOver = (excluded: Axis | null): LockedAxis | null => {
+    let bestAxis: Axis | null = null;
+    let bestScore = LOCK_THRESHOLD;
+    for (const a of axes) {
+      if (a === excluded) continue;
+      const s = Math.abs(deltas.scored[a]);
+      if (s > bestScore) {
+        bestScore = s;
+        bestAxis = a;
+      }
+    }
+    if (!bestAxis) return null;
+    return { axis: bestAxis, extent: Math.round(deltas.raw[bestAxis]) };
+  };
+
+  const primary: LockedAxis | null = prev.primary
+    ? { axis: prev.primary.axis, extent: Math.round(deltas.raw[prev.primary.axis]) }
+    : pickBestOver(null);
+
+  const secondary: LockedAxis | null = prev.secondary
+    ? { axis: prev.secondary.axis, extent: Math.round(deltas.raw[prev.secondary.axis]) }
+    : primary
+      ? pickBestOver(primary.axis)
+      : null;
+
+  return { primary, secondary };
 }
 
 /** Cell size in world units along each axis, per primitive type. */
