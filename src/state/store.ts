@@ -54,6 +54,26 @@ export type Cutout = {
   facing: 'fixed' | 'billboard';
 };
 
+export type RenderCameraState = {
+  isoAnglePreset: 30 | 45 | 60;
+  zoom: number;
+};
+
+export type LightState = {
+  directionalIntensity: number;
+  ambientIntensity: number;
+  azimuthDeg: number;
+  elevationDeg: number;
+  shadowSoftness: number;
+};
+
+export type RenderState = {
+  backgroundTransparent: boolean;
+  backgroundColor: string;
+  shadowIntensity: number;
+  exportScale: 1 | 2 | 4;
+};
+
 const DEFAULT_MATERIALS: Material[] = [
   { id: 'def-sky',   name: 'Sky',     textureKind: 'plain',   color: '#8aa2d4', roughness: 0.55, metalness: 0.05 },
   { id: 'def-sand',  name: 'Sand',    textureKind: 'checker', color: '#c4a47a', secondaryColor: '#8a7454', roughness: 0.7, metalness: 0.0 },
@@ -75,6 +95,9 @@ type SceneSlice = {
   paletteOrder: string[];
   activeBrushMaterialId: string | null;
   defaultRotationIndex: number;
+  renderCameraState: RenderCameraState;
+  lightState: LightState;
+  renderState: RenderState;
 };
 
 type SceneActions = {
@@ -93,6 +116,9 @@ type SceneActions = {
   removeMaterial: (id: string) => void;
   setActiveBrushMaterial: (id: string | null) => void;
   replacePalette: (materials: Material[]) => void;
+  updateRenderCamera: (patch: Partial<RenderCameraState>) => void;
+  updateLight: (patch: Partial<LightState>) => void;
+  updateRender: (patch: Partial<RenderState>) => void;
 };
 
 type UiSlice = {
@@ -132,6 +158,23 @@ export const useStore = create<Store>((set, get) => ({
   paletteOrder: defaultRotationIds.slice(),
   activeBrushMaterialId: defaultRotationIds[0] ?? null,
   defaultRotationIndex: 0,
+  renderCameraState: {
+    isoAnglePreset: 30,
+    zoom: 8,
+  },
+  lightState: {
+    directionalIntensity: 1.1,
+    ambientIntensity: 0.35,
+    azimuthDeg: 40,
+    elevationDeg: 55,
+    shadowSoftness: 1.0,
+  },
+  renderState: {
+    backgroundTransparent: true,
+    backgroundColor: '#f0f0f0',
+    shadowIntensity: 0.35,
+    exportScale: 2,
+  },
 
   addPrimitive: (input) => {
     const order = get().paletteOrder;
@@ -235,6 +278,21 @@ export const useStore = create<Store>((set, get) => ({
       materials: Object.fromEntries(materials.map((m) => [m.id, m])),
       paletteOrder: materials.map((m) => m.id),
       activeBrushMaterialId: materials[0]?.id ?? null,
+    })),
+  updateRenderCamera: (patch) =>
+    set((s) => ({
+      renderCameraState: { ...s.renderCameraState, ...patch },
+      sceneDirty: s.sceneDirty + 1,
+    })),
+  updateLight: (patch) =>
+    set((s) => ({
+      lightState: { ...s.lightState, ...patch },
+      sceneDirty: s.sceneDirty + 1,
+    })),
+  updateRender: (patch) =>
+    set((s) => ({
+      renderState: { ...s.renderState, ...patch },
+      sceneDirty: s.sceneDirty + 1,
     })),
 
   activeTool: 'select',

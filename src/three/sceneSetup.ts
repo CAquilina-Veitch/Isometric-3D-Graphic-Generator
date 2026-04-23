@@ -5,36 +5,39 @@ const GRID_DIVISIONS = 40;
 
 let sharedScene: THREE.Scene | null = null;
 let gridHelper: THREE.GridHelper | null = null;
+let ambientLight: THREE.AmbientLight | null = null;
+let directionalLight: THREE.DirectionalLight | null = null;
+let floorMesh: THREE.Mesh | null = null;
 
 export function getScene(): THREE.Scene {
   if (sharedScene) return sharedScene;
 
   const scene = new THREE.Scene();
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.35);
-  scene.add(ambient);
+  ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+  scene.add(ambientLight);
 
-  const directional = new THREE.DirectionalLight(0xffffff, 1.1);
-  directional.position.set(8, 14, 6);
-  directional.castShadow = true;
-  directional.shadow.mapSize.set(2048, 2048);
-  directional.shadow.camera.near = 1;
-  directional.shadow.camera.far = 60;
-  directional.shadow.camera.left = -FLOOR_SIZE / 2;
-  directional.shadow.camera.right = FLOOR_SIZE / 2;
-  directional.shadow.camera.top = FLOOR_SIZE / 2;
-  directional.shadow.camera.bottom = -FLOOR_SIZE / 2;
-  directional.shadow.bias = -0.0005;
-  scene.add(directional);
+  directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
+  directionalLight.position.set(8, 14, 6);
+  directionalLight.castShadow = true;
+  directionalLight.shadow.mapSize.set(2048, 2048);
+  directionalLight.shadow.camera.near = 1;
+  directionalLight.shadow.camera.far = 60;
+  directionalLight.shadow.camera.left = -FLOOR_SIZE / 2;
+  directionalLight.shadow.camera.right = FLOOR_SIZE / 2;
+  directionalLight.shadow.camera.top = FLOOR_SIZE / 2;
+  directionalLight.shadow.camera.bottom = -FLOOR_SIZE / 2;
+  directionalLight.shadow.bias = -0.0005;
+  scene.add(directionalLight);
 
-  const floor = new THREE.Mesh(
+  floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE),
     new THREE.ShadowMaterial({ opacity: 0.35 }),
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  floor.name = 'floor';
-  scene.add(floor);
+  floorMesh.rotation.x = -Math.PI / 2;
+  floorMesh.receiveShadow = true;
+  floorMesh.name = 'floor';
+  scene.add(floorMesh);
 
   gridHelper = new THREE.GridHelper(FLOOR_SIZE, GRID_DIVISIONS, 0x2a3144, 0x20252f);
   gridHelper.position.y = 0.001;
@@ -49,6 +52,31 @@ export function setGridVisible(visible: boolean) {
   if (gridHelper) gridHelper.visible = visible;
 }
 
+export function applyLightState(state: {
+  directionalIntensity: number;
+  ambientIntensity: number;
+  azimuthDeg: number;
+  elevationDeg: number;
+}) {
+  if (!ambientLight || !directionalLight) return;
+  ambientLight.intensity = state.ambientIntensity;
+  directionalLight.intensity = state.directionalIntensity;
+  const az = (state.azimuthDeg * Math.PI) / 180;
+  const el = (state.elevationDeg * Math.PI) / 180;
+  const distance = 14;
+  directionalLight.position.set(
+    distance * Math.cos(el) * Math.sin(az),
+    distance * Math.sin(el),
+    distance * Math.cos(el) * Math.cos(az),
+  );
+}
+
+export function applyFloorShadow(intensity: number) {
+  if (!floorMesh) return;
+  const material = floorMesh.material as THREE.ShadowMaterial;
+  material.opacity = intensity;
+}
+
 export function makeEditorCamera(width: number, height: number): THREE.OrthographicCamera {
   const camera = makeIsoOrthoCamera(width, height, 10);
   camera.position.set(14, 14, 14);
@@ -56,9 +84,14 @@ export function makeEditorCamera(width: number, height: number): THREE.Orthograp
   return camera;
 }
 
-export function makeRenderCamera(width: number, height: number): THREE.OrthographicCamera {
-  const camera = makeIsoOrthoCamera(width, height, 8);
-  applyIsoAngle(camera, 30, 8);
+export function makeRenderCamera(
+  width: number,
+  height: number,
+  angleDegrees = 30,
+  zoomScale = 8,
+): THREE.OrthographicCamera {
+  const camera = makeIsoOrthoCamera(width, height, zoomScale);
+  applyIsoAngle(camera, angleDegrees, zoomScale);
   return camera;
 }
 

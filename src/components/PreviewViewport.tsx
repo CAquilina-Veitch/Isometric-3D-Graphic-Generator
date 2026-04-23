@@ -6,11 +6,12 @@ import {
   createRenderer,
   resizeOrthoCamera,
   setGridVisible,
+  applyIsoAngle,
+  applyLightState,
+  applyFloorShadow,
 } from '../three/sceneSetup';
 import { useStore } from '../state/store';
 import styles from './Viewport.module.css';
-
-const PREVIEW_ZOOM_SCALE = 8;
 
 export default function PreviewViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -26,7 +27,23 @@ export default function PreviewViewport() {
     const renderer = createRenderer(canvas);
     renderer.setSize(w, h, false);
 
-    const camera = makeRenderCamera(w, h);
+    const initial = useStore.getState();
+    const camera = makeRenderCamera(
+      w,
+      h,
+      initial.renderCameraState.isoAnglePreset,
+      initial.renderCameraState.zoom,
+    );
+    applyLightState(initial.lightState);
+    applyFloorShadow(initial.renderState.shadowIntensity);
+
+    const applyBackground = (transparent: boolean, color: string) => {
+      renderer.setClearColor(new THREE.Color(color), transparent ? 0 : 1);
+    };
+    applyBackground(
+      initial.renderState.backgroundTransparent,
+      initial.renderState.backgroundColor,
+    );
 
     let needsRender = true;
     const requestRender = () => {
@@ -60,12 +77,31 @@ export default function PreviewViewport() {
     const resizeObserver = new ResizeObserver(() => {
       const { clientWidth, clientHeight } = container;
       renderer.setSize(clientWidth, clientHeight, false);
-      resizeOrthoCamera(camera, clientWidth, clientHeight, PREVIEW_ZOOM_SCALE);
+      resizeOrthoCamera(camera, clientWidth, clientHeight, useStore.getState().renderCameraState.zoom);
       requestRender();
     });
     resizeObserver.observe(container);
 
     const unsubDirty = useStore.subscribe((s, prev) => {
+      if (s.renderCameraState !== prev.renderCameraState) {
+        const rc = s.renderCameraState;
+        const { clientWidth, clientHeight } = container;
+        resizeOrthoCamera(camera, clientWidth, clientHeight, rc.zoom);
+        applyIsoAngle(camera, rc.isoAnglePreset, rc.zoom);
+        requestRender();
+      }
+      if (s.lightState !== prev.lightState) {
+        applyLightState(s.lightState);
+        requestRender();
+      }
+      if (s.renderState !== prev.renderState) {
+        applyBackground(
+          s.renderState.backgroundTransparent,
+          s.renderState.backgroundColor,
+        );
+        applyFloorShadow(s.renderState.shadowIntensity);
+        requestRender();
+      }
       if (s.sceneDirty !== prev.sceneDirty) requestRender();
     });
 
