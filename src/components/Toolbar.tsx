@@ -1,5 +1,6 @@
 import { useStore } from '../state/store';
 import { undo, redo, useHistoryState } from '../hooks/useHistory';
+import { exportPNG } from '../utils/export';
 import styles from './Toolbar.module.css';
 
 export default function Toolbar() {
@@ -27,7 +28,9 @@ export default function Toolbar() {
         </button>
         <div className={styles.sep} />
         <button>Save</button>
-        <button>Export</button>
+        <button onClick={() => exportPNG()} title="Download scene as PNG">
+          Export
+        </button>
         <div className={styles.sep} />
         <button
           data-active={previewVisible}

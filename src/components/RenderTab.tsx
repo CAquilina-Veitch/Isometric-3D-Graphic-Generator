@@ -1,4 +1,5 @@
 import { useStore } from '../state/store';
+import { exportPNG } from '../utils/export';
 import styles from './RightPanel.module.css';
 
 export default function RenderTab() {
@@ -66,6 +67,17 @@ export default function RenderTab() {
             {s}×
           </button>
         ))}
+      </div>
+
+      <div className={styles.row} style={{ marginTop: 4 }}>
+        <button style={{ flex: 1 }} onClick={() => exportPNG()}>
+          Download PNG
+        </button>
+      </div>
+      <div className={styles.row}>
+        <button style={{ flex: 1 }} onClick={() => exportPNG({ shadowOnly: true })}>
+          Download shadow pass
+        </button>
       </div>
     </div>
   );
