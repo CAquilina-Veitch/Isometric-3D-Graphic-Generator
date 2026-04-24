@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npx tsc *)",
       "Bash(grep -E \"TODO|thickness|pos\\\\`|write the dilation\")",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(timeout 10 npx vite build --logLevel error)",
+      "Bash(npx vite *)"
     ]
   }
 }

@@ -265,6 +265,52 @@ export default function RenderTab() {
       </div>
 
       <div className={styles.sectionTitle} style={{ marginTop: 10 }}>
+        Ambient occlusion
+      </div>
+      <div className={styles.row}>
+        <button
+          data-active={!state.gtaoEnabled}
+          onClick={() => update({ gtaoEnabled: false })}
+        >
+          Off
+        </button>
+        <button
+          data-active={state.gtaoEnabled}
+          onClick={() => update({ gtaoEnabled: true })}
+        >
+          GTAO
+        </button>
+      </div>
+      {state.gtaoEnabled && (
+        <>
+          <Slider
+            label="Intensity"
+            min={0}
+            max={1}
+            step={0.02}
+            value={state.gtaoIntensity}
+            onChange={(v) => update({ gtaoIntensity: v })}
+          />
+          <Slider
+            label="Radius"
+            min={0.05}
+            max={1.5}
+            step={0.01}
+            value={state.gtaoRadius}
+            onChange={(v) => update({ gtaoRadius: v })}
+          />
+          <Slider
+            label="Thickness"
+            min={0.1}
+            max={2}
+            step={0.05}
+            value={state.gtaoThickness}
+            onChange={(v) => update({ gtaoThickness: v })}
+          />
+        </>
+      )}
+
+      <div className={styles.sectionTitle} style={{ marginTop: 10 }}>
         Export resolution
       </div>
       <div className={styles.row}>

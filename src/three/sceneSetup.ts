@@ -212,10 +212,22 @@ export function applyRenderSettings(
   }
 }
 
-export function applyFloorShadow(intensity: number) {
-  if (!floorMesh) return;
-  const material = floorMesh.material as THREE.ShadowMaterial;
-  material.opacity = intensity;
+/**
+ * Single slider drives both kinds of shadow:
+ *  - Floor: ShadowMaterial.opacity — shadow-only plane, compositing cleanly.
+ *  - Objects: DirectionalLight.shadow.intensity (three r165+) — scales how much
+ *    the shadow map darkens any receiving PBR surface.
+ * Without the second half, shadows from one object cast onto another ignored
+ * the slider and stayed at full strength.
+ */
+export function applyShadowIntensity(intensity: number) {
+  if (floorMesh) {
+    const material = floorMesh.material as THREE.ShadowMaterial;
+    material.opacity = intensity;
+  }
+  if (directionalLight) {
+    directionalLight.shadow.intensity = intensity;
+  }
 }
 
 export function makeEditorCamera(width: number, height: number): THREE.OrthographicCamera {

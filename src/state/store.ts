@@ -113,6 +113,13 @@ export type RenderState = {
   tiltShiftFocusY: number;
   tiltShiftRange: number;
   tiltShiftBlur: number;
+  gtaoEnabled: boolean;
+  /** How strongly AO darkens — 0 (no effect) … 1 (full). */
+  gtaoIntensity: number;
+  /** World-space sample radius. Small values = crevice AO; large = soft bowls. */
+  gtaoRadius: number;
+  /** Max depth difference treated as occluding. Lower = tighter creases. */
+  gtaoThickness: number;
 };
 
 const DEFAULT_GREY_ID = 'mat-default-grey';
@@ -272,6 +279,10 @@ const DEFAULT_RENDER: RenderState = {
   tiltShiftFocusY: 0.5,
   tiltShiftRange: 0.15,
   tiltShiftBlur: 3.0,
+  gtaoEnabled: false,
+  gtaoIntensity: 0.6,
+  gtaoRadius: 0.25,
+  gtaoThickness: 1.0,
 };
 
 function makeEmptyScene(name: string): StoredScene {

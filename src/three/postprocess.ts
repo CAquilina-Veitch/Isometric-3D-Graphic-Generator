@@ -5,6 +5,7 @@ import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import type { RenderState } from '../state/store';
 
 /**
@@ -64,6 +65,7 @@ const TiltShiftShader = {
 export type PostprocessPipeline = {
   composer: EffectComposer;
   outlinePass: OutlinePass;
+  gtaoPass: GTAOPass;
   tiltPass: ShaderPass;
   smaaPass: SMAAPass;
   setSize: (w: number, h: number) => void;
@@ -74,10 +76,12 @@ export type PostprocessPipeline = {
 
 /**
  * Build a full post-processing chain for the preview renderer:
- *   RenderPass → OutlinePass → Tilt-shift → SMAA → OutputPass
- * SMAA is placed last because every upstream pass can introduce aliasing
- * (outline edges, blur sampling) — a single AA pass at the end cleans them
- * all up. OutputPass handles tonemap/colorspace encoding for the final image.
+ *   RenderPass → GTAO → OutlinePass → Tilt-shift → SMAA → OutputPass
+ * GTAO goes before the outline pass so outline edges don't get AO-darkened
+ * (which would blur their crisp silhouette). SMAA is placed last because
+ * every upstream pass can introduce aliasing (outline edges, AO noise, blur
+ * sampling) — a single AA pass at the end cleans them all up. OutputPass
+ * handles tonemap/colorspace encoding for the final image.
  */
 export function createPostprocess(
   renderer: THREE.WebGLRenderer,
@@ -90,6 +94,22 @@ export function createPostprocess(
   composer.setSize(width, height);
 
   composer.addPass(new RenderPass(scene, camera));
+
+  // GTAO — Ground-truth AO. Better-quality replacement for SSAO; same
+  // underlying idea (sample nearby depth/normals to approximate occlusion)
+  // but uses horizon-based integration for a softer, less haloed result.
+  // Defaults below match the addon's sample for this frustum size.
+  const gtaoPass = new GTAOPass(scene, camera, width, height);
+  gtaoPass.output = GTAOPass.OUTPUT.Default;
+  gtaoPass.blendIntensity = 1.0;
+  gtaoPass.updateGtaoMaterial({
+    radius: 0.25,
+    distanceExponent: 1,
+    thickness: 1,
+    scale: 1,
+  });
+  gtaoPass.enabled = false;
+  composer.addPass(gtaoPass);
 
   const outlinePass = new OutlinePass(
     new THREE.Vector2(width, height),
@@ -118,6 +138,7 @@ export function createPostprocess(
   const setSize = (w: number, h: number) => {
     composer.setSize(w, h);
     outlinePass.setSize(w, h);
+    gtaoPass.setSize(w, h);
     tiltPass.uniforms.resolution.value.set(w, h);
     smaaPass.setSize(w, h);
   };
@@ -133,6 +154,13 @@ export function createPostprocess(
     outlinePass.edgeThickness = state.outlineThickness;
     outlinePass.edgeStrength = state.outlineStrength;
 
+    gtaoPass.enabled = state.gtaoEnabled;
+    gtaoPass.blendIntensity = state.gtaoIntensity;
+    gtaoPass.updateGtaoMaterial({
+      radius: state.gtaoRadius,
+      thickness: state.gtaoThickness,
+    });
+
     tiltPass.enabled = state.tiltShiftEnabled;
     tiltPass.uniforms.focusY.value = state.tiltShiftFocusY;
     tiltPass.uniforms.focusRange.value = state.tiltShiftRange;
@@ -146,6 +174,7 @@ export function createPostprocess(
   return {
     composer,
     outlinePass,
+    gtaoPass,
     tiltPass,
     smaaPass,
     setSize,
