@@ -3,7 +3,10 @@ import {
   getScene,
   makeRenderCamera,
   applyIsoAngle,
+  applyRenderSettings,
 } from '../three/sceneSetup';
+import { createPostprocess } from '../three/postprocess';
+import { getPrimitivesGroupObject, getCutoutsGroupObject } from '../three/sceneSync';
 import { useStore } from '../state/store';
 
 export type ExportOptions = {
@@ -38,10 +41,16 @@ export async function exportPNG(opts: ExportOptions = {}): Promise<void> {
   renderer.setPixelRatio(1);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  // Gradient background is composited onto a 2D canvas after render, so when
+  // it's on we tell WebGL to clear to transparent and draw the gradient behind.
+  const wantsGradient = state.renderState.backgroundGradientEnabled && !opts.shadowOnly;
   renderer.setClearColor(
     new THREE.Color(state.renderState.backgroundColor),
-    state.renderState.backgroundTransparent ? 0 : 1,
+    state.renderState.backgroundTransparent || wantsGradient ? 0 : 1,
   );
+  applyRenderSettings(renderer, scene, state.renderState);
 
   const hiddenHelpers: { obj: THREE.Object3D; prev: boolean }[] = [];
   const swappedMaterials: { mesh: THREE.Mesh; material: THREE.Material | THREE.Material[] }[] = [];
@@ -51,7 +60,6 @@ export async function exportPNG(opts: ExportOptions = {}): Promise<void> {
     depthWrite: false,
   });
 
-  // Hide editor-only helpers (grid, gizmo).
   scene.traverse((obj) => {
     if (obj.userData.editorOnly === true || obj.name === 'gridHelper') {
       if (obj.visible) {
@@ -61,11 +69,22 @@ export async function exportPNG(opts: ExportOptions = {}): Promise<void> {
     }
   });
 
+  // Post-processing composer for the export render. Shadow-only exports skip
+  // the composer entirely — outlines/tilt-shift on invisible meshes are either
+  // nonsense or expensive no-ops.
+  const post = opts.shadowOnly
+    ? null
+    : createPostprocess(renderer, scene, camera, width, height);
+  if (post) {
+    post.setOutlineTargets([
+      ...getPrimitivesGroupObject().children,
+      ...getCutoutsGroupObject().children,
+    ]);
+    post.apply(state.renderState);
+  }
+
   try {
     if (opts.shadowOnly) {
-      // Swap every mesh's material for invisible (keeps castShadow → shadow
-      // pass still populates the shadow map). Floor is excluded so its
-      // ShadowMaterial draws the shadow onto the transparent bg.
       scene.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh)) return;
         if (obj.name === 'floor') return;
@@ -74,17 +93,66 @@ export async function exportPNG(opts: ExportOptions = {}): Promise<void> {
       });
     }
 
-    renderer.render(scene, camera);
+    if (post) post.composer.render();
+    else renderer.render(scene, camera);
 
-    const canvas = renderer.domElement;
-    const blob = await canvasToBlob(canvas);
+    const finalCanvas = wantsGradient
+      ? compositeWithGradient(
+          renderer.domElement,
+          width,
+          height,
+          state.renderState.backgroundGradientTop,
+          state.renderState.backgroundGradientBottom,
+          state.renderState.backgroundGradientStyle,
+        )
+      : renderer.domElement;
+
+    const blob = await canvasToBlob(finalCanvas);
     downloadBlob(blob, opts.filename ?? defaultFilename(opts.shadowOnly));
   } finally {
     for (const { mesh, material } of swappedMaterials) mesh.material = material;
     invisibleMaterial.dispose();
     for (const { obj, prev } of hiddenHelpers) obj.visible = prev;
+    if (post) post.dispose();
     renderer.dispose();
   }
+}
+
+function compositeWithGradient(
+  webglCanvas: HTMLCanvasElement,
+  width: number,
+  height: number,
+  top: string,
+  bottom: string,
+  style: 'linear' | 'radial',
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Failed to get 2d context for export composite');
+
+  if (style === 'radial') {
+    const gradient = ctx.createRadialGradient(
+      width / 2,
+      height / 2,
+      0,
+      width / 2,
+      height / 2,
+      Math.max(width, height) / 2,
+    );
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(1, bottom);
+    ctx.fillStyle = gradient;
+  } else {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    gradient.addColorStop(0, top);
+    gradient.addColorStop(1, bottom);
+    ctx.fillStyle = gradient;
+  }
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(webglCanvas, 0, 0);
+  return canvas;
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -107,7 +175,6 @@ function downloadBlob(blob: Blob, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Give the browser a tick to kick off the download before revoking.
   setTimeout(() => URL.revokeObjectURL(url), 250);
 }
 

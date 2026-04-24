@@ -9,7 +9,13 @@ import {
   applyIsoAngle,
   applyLightState,
   applyFloorShadow,
+  applyRenderSettings,
 } from '../three/sceneSetup';
+import { createPostprocess } from '../three/postprocess';
+import {
+  getPrimitivesGroupObject,
+  getCutoutsGroupObject,
+} from '../three/sceneSync';
 import { useStore } from '../state/store';
 import styles from './Viewport.module.css';
 
@@ -36,14 +42,41 @@ export default function PreviewViewport() {
     );
     applyLightState(initial.lightState);
     applyFloorShadow(initial.renderState.shadowIntensity);
+    applyRenderSettings(renderer, scene, initial.renderState);
 
-    const applyBackground = (transparent: boolean, color: string) => {
-      renderer.setClearColor(new THREE.Color(color), transparent ? 0 : 1);
+    const post = createPostprocess(renderer, scene, camera, w, h);
+    post.apply(initial.renderState);
+
+    const refreshOutlineTargets = () => {
+      // Outline everything that renders in the preview (primitives + cutouts).
+      // If per-material outlining is added later, filter here.
+      post.setOutlineTargets([
+        ...getPrimitivesGroupObject().children,
+        ...getCutoutsGroupObject().children,
+      ]);
     };
-    applyBackground(
-      initial.renderState.backgroundTransparent,
-      initial.renderState.backgroundColor,
-    );
+    refreshOutlineTargets();
+
+    const applyBackground = (state: typeof initial.renderState) => {
+      // Gradient wins when enabled: canvas goes alpha=0 and the container's
+      // inline gradient shows through. Otherwise fall back to the existing
+      // transparent/solid-color behaviour.
+      if (state.backgroundGradientEnabled) {
+        renderer.setClearColor(0x000000, 0);
+        const shape =
+          state.backgroundGradientStyle === 'radial'
+            ? `radial-gradient(ellipse at center, ${state.backgroundGradientTop} 0%, ${state.backgroundGradientBottom} 100%)`
+            : `linear-gradient(180deg, ${state.backgroundGradientTop} 0%, ${state.backgroundGradientBottom} 100%)`;
+        container.style.background = shape;
+        return;
+      }
+      container.style.background = '';
+      renderer.setClearColor(
+        new THREE.Color(state.backgroundColor),
+        state.backgroundTransparent ? 0 : 1,
+      );
+    };
+    applyBackground(initial.renderState);
 
     let needsRender = true;
     const requestRender = () => {
@@ -51,6 +84,8 @@ export default function PreviewViewport() {
     };
 
     const render = () => {
+      // Hide editor-only helpers (grid, bounds overlay) during the render pass
+      // so they don't land in the final image or the PNG export.
       const hidden: { obj: THREE.Object3D; prev: boolean }[] = [];
       scene.traverse((obj) => {
         if (obj.userData.editorOnly === true || obj.name === 'gridHelper') {
@@ -60,7 +95,7 @@ export default function PreviewViewport() {
           }
         }
       });
-      renderer.render(scene, camera);
+      post.composer.render();
       for (const { obj, prev } of hidden) obj.visible = prev;
     };
 
@@ -77,7 +112,13 @@ export default function PreviewViewport() {
     const resizeObserver = new ResizeObserver(() => {
       const { clientWidth, clientHeight } = container;
       renderer.setSize(clientWidth, clientHeight, false);
-      resizeOrthoCamera(camera, clientWidth, clientHeight, useStore.getState().renderCameraState.zoom);
+      resizeOrthoCamera(
+        camera,
+        clientWidth,
+        clientHeight,
+        useStore.getState().renderCameraState.zoom,
+      );
+      post.setSize(clientWidth, clientHeight);
       requestRender();
     });
     resizeObserver.observe(container);
@@ -95,11 +136,14 @@ export default function PreviewViewport() {
         requestRender();
       }
       if (s.renderState !== prev.renderState) {
-        applyBackground(
-          s.renderState.backgroundTransparent,
-          s.renderState.backgroundColor,
-        );
+        applyBackground(s.renderState);
         applyFloorShadow(s.renderState.shadowIntensity);
+        applyRenderSettings(renderer, scene, s.renderState);
+        post.apply(s.renderState);
+        requestRender();
+      }
+      if (s.primitives !== prev.primitives || s.cutouts !== prev.cutouts) {
+        refreshOutlineTargets();
         requestRender();
       }
       if (s.sceneDirty !== prev.sceneDirty) requestRender();
@@ -108,9 +152,10 @@ export default function PreviewViewport() {
     return () => {
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
+      post.dispose();
       renderer.dispose();
       unsubDirty();
-      // restore grid for editor
+      container.style.background = '';
       setGridVisible(useStore.getState().showGrid);
     };
   }, []);

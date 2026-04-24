@@ -8,6 +8,8 @@ let sharedScene: THREE.Scene | null = null;
 let gridHelper: THREE.GridHelper | null = null;
 let ambientLight: THREE.AmbientLight | null = null;
 let directionalLight: THREE.DirectionalLight | null = null;
+let fillLight: THREE.DirectionalLight | null = null;
+let rimLight: THREE.DirectionalLight | null = null;
 let floorMesh: THREE.Mesh | null = null;
 let boundsOverlay: THREE.LineSegments | null = null;
 
@@ -36,6 +38,17 @@ export function getScene(): THREE.Scene {
   directionalLight.shadow.bias = -0.00005;
   directionalLight.shadow.normalBias = 0.04;
   scene.add(directionalLight);
+
+  // Fill + rim lights for the three-point rig. Start hidden — applyLightState
+  // toggles visibility off rigEnabled. No shadows from these; only the key light
+  // casts shadow so the silhouette reads cleanly.
+  fillLight = new THREE.DirectionalLight(0xcfe1ff, 1.2);
+  fillLight.visible = false;
+  scene.add(fillLight);
+
+  rimLight = new THREE.DirectionalLight(0xffe3c2, 2.5);
+  rimLight.visible = false;
+  scene.add(rimLight);
 
   floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE),
@@ -115,6 +128,15 @@ export function applyLightState(state: {
   azimuthDeg: number;
   elevationDeg: number;
   shadowSoftness?: number;
+  rigEnabled?: boolean;
+  fillIntensity?: number;
+  fillColor?: string;
+  fillAzimuthDeg?: number;
+  fillElevationDeg?: number;
+  rimIntensity?: number;
+  rimColor?: string;
+  rimAzimuthDeg?: number;
+  rimElevationDeg?: number;
 }) {
   if (!ambientLight || !directionalLight) return;
   ambientLight.intensity = state.ambientIntensity;
@@ -123,14 +145,71 @@ export function applyLightState(state: {
   // shadow.radius is the PCF blur radius; only has an effect with
   // PCFSoftShadowMap (which we use). Slider 0..3 → radius 0..12.
   directionalLight.shadow.radius = Math.max(0, (state.shadowSoftness ?? 1) * 4);
-  const az = (state.azimuthDeg * Math.PI) / 180;
-  const el = (state.elevationDeg * Math.PI) / 180;
-  const distance = 14;
-  directionalLight.position.set(
+  positionDirectional(directionalLight, state.azimuthDeg, state.elevationDeg, 14);
+
+  if (fillLight && rimLight) {
+    const rigOn = state.rigEnabled ?? false;
+    fillLight.visible = rigOn;
+    rimLight.visible = rigOn;
+    if (rigOn) {
+      fillLight.intensity = state.fillIntensity ?? 1.2;
+      fillLight.color.set(state.fillColor ?? '#cfe1ff');
+      positionDirectional(
+        fillLight,
+        state.fillAzimuthDeg ?? 220,
+        state.fillElevationDeg ?? 30,
+        14,
+      );
+      rimLight.intensity = state.rimIntensity ?? 2.5;
+      rimLight.color.set(state.rimColor ?? '#ffe3c2');
+      positionDirectional(
+        rimLight,
+        state.rimAzimuthDeg ?? 220,
+        state.rimElevationDeg ?? 20,
+        14,
+      );
+    }
+  }
+}
+
+function positionDirectional(
+  light: THREE.DirectionalLight,
+  azDeg: number,
+  elDeg: number,
+  distance: number,
+) {
+  const az = (azDeg * Math.PI) / 180;
+  const el = (elDeg * Math.PI) / 180;
+  light.position.set(
     distance * Math.cos(el) * Math.sin(az),
     distance * Math.sin(el),
     distance * Math.cos(el) * Math.cos(az),
   );
+}
+
+/**
+ * Apply renderer-level display settings (tonemap + exposure). Materials need
+ * a recompile when tonemapping changes, so we bump `needsUpdate` on everything.
+ */
+export function applyRenderSettings(
+  renderer: THREE.WebGLRenderer,
+  scene: THREE.Scene,
+  state: { tonemapEnabled: boolean; exposure: number },
+) {
+  const desired = state.tonemapEnabled
+    ? THREE.ACESFilmicToneMapping
+    : THREE.NoToneMapping;
+  const changed = renderer.toneMapping !== desired;
+  renderer.toneMapping = desired;
+  renderer.toneMappingExposure = state.exposure;
+  if (changed) {
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) if (m) m.needsUpdate = true;
+      }
+    });
+  }
 }
 
 export function applyFloorShadow(intensity: number) {

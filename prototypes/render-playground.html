@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Render Playground</title>
+  <style>
+    :root {
+      --bg-0: #16171b;
+      --bg-1: #1e2025;
+      --bg-2: #282a30;
+      --fg-0: #e8e8ea;
+      --fg-1: #b8babf;
+      --fg-2: #787a82;
+      --accent: #5aa1ff;
+      --border: #2e3036;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg-0); color: var(--fg-0); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+    body { display: grid; grid-template-columns: 280px 1fr; height: 100vh; overflow: hidden; }
+
+    aside { background: var(--bg-1); border-right: 1px solid var(--border); overflow-y: auto; padding: 12px; }
+    aside h1 { font-size: 13px; margin: 0 0 8px; letter-spacing: 0.5px; color: var(--fg-0); text-transform: uppercase; }
+    aside p.hint { color: var(--fg-2); font-size: 11px; line-height: 1.5; margin: 0 0 14px; }
+
+    .group { border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; background: var(--bg-2); }
+    .group > header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); user-select: none; cursor: pointer; }
+    .group > header input[type=checkbox] { margin: 0; accent-color: var(--accent); }
+    .group > header .title { font-weight: 600; color: var(--fg-0); flex: 1; }
+    .group[data-on="false"] > header { opacity: 0.6; }
+    .group[data-on="false"] > header .title { color: var(--fg-1); }
+    .group .body { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+    .group[data-on="false"] .body { opacity: 0.4; pointer-events: none; }
+
+    .field { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 8px; }
+    .field label { color: var(--fg-1); font-size: 11px; }
+    .field input[type=range] { width: 100%; accent-color: var(--accent); }
+    .field input[type=color] { border: none; background: none; height: 22px; padding: 0; }
+    .field .val { color: var(--fg-2); font-size: 10px; text-align: right; }
+
+    .row { display: flex; gap: 6px; }
+    .row button { flex: 1; background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--border); padding: 5px 0; border-radius: 3px; font-family: inherit; font-size: 11px; cursor: pointer; }
+    .row button[data-active="true"] { background: var(--accent); color: #000; border-color: var(--accent); }
+
+    main { position: relative; overflow: hidden; }
+    #bg { position: absolute; inset: 0; }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .hud { position: absolute; top: 8px; right: 8px; color: var(--fg-2); background: rgba(0,0,0,0.35); padding: 4px 8px; border-radius: 3px; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Render playground</h1>
+    <p class="hint">Every effect starts OFF. Toggle them individually to see impact, or stack them for the final look. Defaults are sensible starting points — numbers in parens are where I think the sweet spot usually lives.</p>
+
+    <div class="group" id="g-tonemap" data-on="false">
+      <header><input type="checkbox" id="tonemap-on" /><span class="title">1. ACES tonemapping</span></header>
+      <div class="body">
+        <div class="field"><label>exposure</label><input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1.0" /><span class="val" id="exposure-v">1.00</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-env" data-on="false">
+      <header><input type="checkbox" id="env-on" /><span class="title">2. Environment IBL</span></header>
+      <div class="body">
+        <div class="field"><label>intensity</label><input type="range" id="env-int" min="0" max="2" step="0.05" value="1.0" /><span class="val" id="env-int-v">1.00</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-rim" data-on="false">
+      <header><input type="checkbox" id="rim-on" /><span class="title">3. Rim + fill lights</span></header>
+      <div class="body">
+        <div class="field"><label>fill int.</label><input type="range" id="fill-int" min="0" max="3" step="0.05" value="1.2" /><span class="val" id="fill-int-v">1.20</span></div>
+        <div class="field"><label>fill color</label><input type="color" id="fill-col" value="#cfe1ff" /><span class="val"></span></div>
+        <div class="field"><label>rim int.</label><input type="range" id="rim-int" min="0" max="6" step="0.05" value="2.5" /><span class="val" id="rim-int-v">2.50</span></div>
+        <div class="field"><label>rim color</label><input type="color" id="rim-col" value="#ffe3c2" /><span class="val"></span></div>
+        <div class="field"><label>rim azimuth</label><input type="range" id="rim-az" min="0" max="360" step="5" value="220" /><span class="val" id="rim-az-v">220</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-bg" data-on="false">
+      <header><input type="checkbox" id="bg-on" /><span class="title">4. Gradient background</span></header>
+      <div class="body">
+        <div class="field"><label>top</label><input type="color" id="bg-top" value="#e8ecf4" /><span class="val"></span></div>
+        <div class="field"><label>bottom</label><input type="color" id="bg-bot" value="#a7b2c4" /><span class="val"></span></div>
+        <div class="row">
+          <button data-active="true" id="bg-linear">linear</button>
+          <button data-active="false" id="bg-radial">radial</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="group" id="g-ssao" data-on="false">
+      <header><input type="checkbox" id="ssao-on" /><span class="title">5. SSAO (crease darkening)</span></header>
+      <div class="body">
+        <div class="field"><label>radius</label><input type="range" id="ssao-r" min="0.05" max="2" step="0.05" value="0.3" /><span class="val" id="ssao-r-v">0.30</span></div>
+        <div class="field"><label>min dist</label><input type="range" id="ssao-min" min="0.0001" max="0.01" step="0.0005" value="0.001" /><span class="val" id="ssao-min-v">0.0010</span></div>
+        <div class="field"><label>max dist</label><input type="range" id="ssao-max" min="0.01" max="0.5" step="0.01" value="0.1" /><span class="val" id="ssao-max-v">0.10</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-outline" data-on="false">
+      <header><input type="checkbox" id="outline-on" /><span class="title">6. Outline pass</span></header>
+      <div class="body">
+        <div class="field"><label>thickness</label><input type="range" id="outline-thick" min="0.5" max="8" step="0.1" value="2" /><span class="val" id="outline-thick-v">2.0</span></div>
+        <div class="field"><label>color</label><input type="color" id="outline-col" value="#1a1a1a" /><span class="val"></span></div>
+        <div class="field"><label>strength</label><input type="range" id="outline-str" min="0" max="10" step="0.1" value="3" /><span class="val" id="outline-str-v">3.0</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-tilt" data-on="false">
+      <header><input type="checkbox" id="tilt-on" /><span class="title">7. Tilt-shift (fake DOF)</span></header>
+      <div class="body">
+        <div class="field"><label>focus Y</label><input type="range" id="tilt-y" min="0" max="1" step="0.01" value="0.5" /><span class="val" id="tilt-y-v">0.50</span></div>
+        <div class="field"><label>focus range</label><input type="range" id="tilt-range" min="0" max="0.5" step="0.01" value="0.15" /><span class="val" id="tilt-range-v">0.15</span></div>
+        <div class="field"><label>max blur</label><input type="range" id="tilt-blur" min="0" max="8" step="0.1" value="3" /><span class="val" id="tilt-blur-v">3.0</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-shadow" data-on="true">
+      <header><input type="checkbox" id="shadow-on" checked /><span class="title">8. Soft shadows</span></header>
+      <div class="body">
+        <div class="row">
+          <button data-active="true" id="shadow-pcf">PCFSoft</button>
+          <button data-active="false" id="shadow-vsm">VSM</button>
+        </div>
+        <div class="field"><label>radius</label><input type="range" id="shadow-rad" min="0" max="16" step="0.5" value="4" /><span class="val" id="shadow-rad-v">4.0</span></div>
+        <div class="field"><label>opacity</label><input type="range" id="shadow-op" min="0" max="1" step="0.02" value="0.35" /><span class="val" id="shadow-op-v">0.35</span></div>
+      </div>
+    </div>
+
+    <div class="group" id="g-smaa" data-on="false">
+      <header><input type="checkbox" id="smaa-on" /><span class="title">9. SMAA (antialiasing)</span></header>
+      <div class="body">
+        <p style="margin:0;color:var(--fg-2);font-size:11px;">Replaces the default MSAA that the composer disables.</p>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="bg" style="background: #444;"></div>
+    <canvas id="c"></canvas>
+    <div class="hud" id="hud">—</div>
+  </main>
+
+  <script type="module" src="./playground.ts"></script>
+</body>
+</html>

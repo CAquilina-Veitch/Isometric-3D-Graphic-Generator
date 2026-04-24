@@ -63,6 +63,119 @@ export default function LightTab() {
           {state.ambientColor ?? '#ffffff'}
         </span>
       </div>
+
+      <div className={styles.sectionTitle} style={{ marginTop: 10 }}>
+        Three-point rig
+      </div>
+      <div className={styles.row}>
+        <button
+          data-active={!state.rigEnabled}
+          onClick={() => update({ rigEnabled: false })}
+        >
+          Off
+        </button>
+        <button
+          data-active={state.rigEnabled}
+          onClick={() => update({ rigEnabled: true })}
+        >
+          On
+        </button>
+      </div>
+
+      {state.rigEnabled && (
+        <>
+          <div className={styles.sectionTitle} style={{ marginTop: 6 }}>
+            Fill
+          </div>
+          <Slider
+            label="Intensity"
+            min={0}
+            max={5}
+            step={0.05}
+            value={state.fillIntensity}
+            onChange={(v) => update({ fillIntensity: v })}
+          />
+          <ColorField
+            label="Color"
+            value={state.fillColor}
+            onChange={(hex) => update({ fillColor: hex })}
+          />
+          <Slider
+            label="Azimuth"
+            min={0}
+            max={360}
+            step={1}
+            value={state.fillAzimuthDeg}
+            onChange={(v) => update({ fillAzimuthDeg: v })}
+          />
+          <Slider
+            label="Elevation"
+            min={0}
+            max={90}
+            step={1}
+            value={state.fillElevationDeg}
+            onChange={(v) => update({ fillElevationDeg: v })}
+          />
+
+          <div className={styles.sectionTitle} style={{ marginTop: 6 }}>
+            Rim
+          </div>
+          <Slider
+            label="Intensity"
+            min={0}
+            max={8}
+            step={0.05}
+            value={state.rimIntensity}
+            onChange={(v) => update({ rimIntensity: v })}
+          />
+          <ColorField
+            label="Color"
+            value={state.rimColor}
+            onChange={(hex) => update({ rimColor: hex })}
+          />
+          <Slider
+            label="Azimuth"
+            min={0}
+            max={360}
+            step={1}
+            value={state.rimAzimuthDeg}
+            onChange={(v) => update({ rimAzimuthDeg: v })}
+          />
+          <Slider
+            label="Elevation"
+            min={0}
+            max={90}
+            step={1}
+            value={state.rimElevationDeg}
+            onChange={(v) => update({ rimElevationDeg: v })}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  return (
+    <div className={styles.field}>
+      <label className={styles.fieldLabel}>{label}</label>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: 28, height: 22, padding: 0, borderRadius: 4, border: '1px solid var(--border-strong)', background: 'transparent' }}
+      />
+      <span style={{ fontSize: 11, color: 'var(--fg-2)', fontFamily: 'monospace', flex: 1 }}>
+        {value}
+      </span>
     </div>
   );
 }

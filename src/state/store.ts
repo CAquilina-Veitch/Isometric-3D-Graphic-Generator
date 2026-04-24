@@ -83,6 +83,15 @@ export type LightState = {
   azimuthDeg: number;
   elevationDeg: number;
   shadowSoftness: number;
+  rigEnabled: boolean;
+  fillIntensity: number;
+  fillColor: string;
+  fillAzimuthDeg: number;
+  fillElevationDeg: number;
+  rimIntensity: number;
+  rimColor: string;
+  rimAzimuthDeg: number;
+  rimElevationDeg: number;
 };
 
 export type RenderState = {
@@ -90,6 +99,20 @@ export type RenderState = {
   backgroundColor: string;
   shadowIntensity: number;
   exportScale: 1 | 2 | 4;
+  tonemapEnabled: boolean;
+  exposure: number;
+  backgroundGradientEnabled: boolean;
+  backgroundGradientTop: string;
+  backgroundGradientBottom: string;
+  backgroundGradientStyle: 'linear' | 'radial';
+  outlineEnabled: boolean;
+  outlineColor: string;
+  outlineThickness: number;
+  outlineStrength: number;
+  tiltShiftEnabled: boolean;
+  tiltShiftFocusY: number;
+  tiltShiftRange: number;
+  tiltShiftBlur: number;
 };
 
 const DEFAULT_GREY_ID = 'mat-default-grey';
@@ -218,6 +241,16 @@ const DEFAULT_LIGHT: LightState = {
   azimuthDeg: 40,
   elevationDeg: 55,
   shadowSoftness: 1.0,
+  // Three-point rig — off by default. Classic ratio: key:fill:rim = 1:0.3:0.7.
+  rigEnabled: false,
+  fillIntensity: 1.2,
+  fillColor: '#cfe1ff',
+  fillAzimuthDeg: 220,
+  fillElevationDeg: 30,
+  rimIntensity: 2.5,
+  rimColor: '#ffe3c2',
+  rimAzimuthDeg: 220,
+  rimElevationDeg: 20,
 };
 
 const DEFAULT_RENDER: RenderState = {
@@ -225,6 +258,20 @@ const DEFAULT_RENDER: RenderState = {
   backgroundColor: '#f0f0f0',
   shadowIntensity: 0.35,
   exportScale: 2,
+  tonemapEnabled: false,
+  exposure: 1.0,
+  backgroundGradientEnabled: false,
+  backgroundGradientTop: '#e8ecf4',
+  backgroundGradientBottom: '#a7b2c4',
+  backgroundGradientStyle: 'linear',
+  outlineEnabled: false,
+  outlineColor: '#1a1a1a',
+  outlineThickness: 2.0,
+  outlineStrength: 3.0,
+  tiltShiftEnabled: false,
+  tiltShiftFocusY: 0.5,
+  tiltShiftRange: 0.15,
+  tiltShiftBlur: 3.0,
 };
 
 function makeEmptyScene(name: string): StoredScene {
@@ -472,12 +519,19 @@ export const useStore = create<Store>((set, get) => ({
     }),
   loadProjectData: (data) =>
     set(() => {
-      const active = data.scenes.find((sc) => sc.id === data.activeSceneId) ?? data.scenes[0];
+      // Fill any fields missing from older saved files with current defaults so
+      // new rig / post-processing settings don't arrive as undefined.
+      const migrated = data.scenes.map((sc) => ({
+        ...sc,
+        lightState: { ...DEFAULT_LIGHT, ...sc.lightState },
+        renderState: { ...DEFAULT_RENDER, ...sc.renderState },
+      }));
+      const active = migrated.find((sc) => sc.id === data.activeSceneId) ?? migrated[0];
       if (!active) return {};
       return {
         projectId: data.id,
         projectName: data.name,
-        scenes: data.scenes,
+        scenes: migrated,
         activeSceneId: active.id,
         primitives: active.primitives,
         cutouts: active.cutouts,

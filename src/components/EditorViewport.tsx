@@ -7,6 +7,7 @@ import {
   createRenderer,
   resizeOrthoCamera,
   updateGridBoundsOverlay,
+  applyRenderSettings,
 } from '../three/sceneSetup';
 import { getOrCreateGhost, removeGhost } from '../three/ghost';
 import { createGhostPool, type GhostPool } from '../three/ghostPool';
@@ -61,6 +62,7 @@ export default function EditorViewport() {
     const { clientWidth: w, clientHeight: h } = container;
     const renderer = createRenderer(canvas);
     renderer.setSize(w, h, false);
+    applyRenderSettings(renderer, scene, useStore.getState().renderState);
 
     const camera = makeEditorCamera(w, h);
 
@@ -692,6 +694,9 @@ export default function EditorViewport() {
         s.gridBoundsSize !== prev.gridBoundsSize
       ) {
         syncBoundsOverlay();
+      }
+      if (s.renderState !== prev.renderState) {
+        applyRenderSettings(renderer, scene, s.renderState);
       }
     });
 
